@@ -1,0 +1,4 @@
+#!/usr/bin/python
+from gtk_stable_diffusion import main
+main()
+

@@ -7,9 +7,13 @@ Installation
 We are now preparing its pip package. The setup.py is also under development.
 <!--
 ```bash
+pip install git+https://github.com/nazodane/gtk_stable_diffusion.git
+```
+```bash
 pip install gtk_stable_diffusion
 ```
 -->
+
 
 Note that the model weights are automatically download via [BitTorrent magnet link](https://en.wikipedia.org/wiki/Magnet_URI_scheme) using [libtorrent](https://en.wikipedia.org/wiki/Libtorrent) and the model weights are automatically converted from original Stable Diffusion format to Diffusers format in the first launch of the tool.
 

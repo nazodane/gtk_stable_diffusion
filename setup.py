@@ -21,17 +21,17 @@ def read(fname):
 
 install_requires = [
 # https://pygobject.readthedocs.io/en/latest/getting_started.html
-    deps["pycairo"],
-    deps["PyGObject"],
+    "pycairo",
+    "PyGObject",
 
-    deps["torch"],
-    deps["diffusers"],
-    deps["numpy"],
+    "torch",
+    "diffusers",
+    "numpy",
 
-    deps["xformers"], # for memory efficient attention
+    "xformers", # for memory efficient attention
 
-    deps["libtorrent"], # for model weights downloader
-    deps["omegaconf"], # for convert_original_stable_diffusion_to_diffusers.py
+    "libtorrent", # for model weights downloader
+    "omegaconf", # for convert_original_stable_diffusion_to_diffusers.py
 ]
 
 setup(
@@ -42,11 +42,12 @@ setup(
     description = ("A simple GTK UI for Stable Diffusion."),
     license = "Apache",
     keywords = "stable_diffusion diffusers",
-    url = "http://packages.python.org/gtk_stable_diffusion",
+    url = "https://github.com/nazodane/gtk_stable_diffusion",
     packages=['gtk_stable_diffusion'],
     long_description=read('README.md'),
     python_requires=">=3.10.0",
     install_requires=install_requires,
+    scripts=["gtk-stable-diffusion"],
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Topic :: Artistic Software",
