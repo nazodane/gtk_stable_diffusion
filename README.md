@@ -4,16 +4,20 @@ GTK Stable Diffusion aims just for fun. This means the tool is more focusing on 
 
 Installation
 ============
-We are now preparing its pip package. The setup.py is also under development.
-<!--
+GTK Stable Diffusion is easily installable via pip command:
 ```bash
 pip install git+https://github.com/nazodane/gtk_stable_diffusion.git
 ```
+<!--
 ```bash
 pip install gtk_stable_diffusion
 ```
 -->
 
+The installed tool is in ~/.local/bin/ directory:
+```bash
+~/.local/bin/gtk-stable-diffusion
+```
 
 Note that the model weights are automatically download via [BitTorrent magnet link](https://en.wikipedia.org/wiki/Magnet_URI_scheme) using [libtorrent](https://en.wikipedia.org/wiki/Libtorrent) and the model weights are automatically converted from original Stable Diffusion format to Diffusers format in the first launch of the tool.
 
