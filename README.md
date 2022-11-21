@@ -6,20 +6,19 @@ Installation
 ============
 GTK Stable Diffusion is easily installable via pip command:
 ```bash
-pip install git+https://github.com/nazodane/gtk_stable_diffusion.git
-```
-<!--
-```bash
 pip install gtk_stable_diffusion
 ```
--->
+or
+```bash
+pip install git+https://github.com/nazodane/gtk_stable_diffusion.git
+```
 
 The installed tool is in ~/.local/bin/ directory:
 ```bash
 ~/.local/bin/gtk-stable-diffusion
 ```
 
-Note that the model weights are automatically download via [BitTorrent magnet link](https://en.wikipedia.org/wiki/Magnet_URI_scheme) using [libtorrent](https://en.wikipedia.org/wiki/Libtorrent) and the model weights are automatically converted from original Stable Diffusion format to Diffusers format in the first launch of the tool.
+Note that the model weights are automatically downloaded via [BitTorrent magnet link](https://en.wikipedia.org/wiki/Magnet_URI_scheme) using [libtorrent](https://en.wikipedia.org/wiki/Libtorrent) and the model weights are automatically converted from original Stable Diffusion format to Diffusers format in the first launch of the tool.
 
 Requirements
 ============
@@ -40,8 +39,8 @@ GTK Stable Diffusion codes are under Apache License 2.0. This is because we almo
 
 GTK and [its Python bindings are LGPL](https://www.gtk.org/docs/language-bindings/python) so we should carefully treat GTK-related codes.
 
-Screenshots
-===========
+Screenshot
+==========
 ![Screenshot Image](screenshot.png)
 
 
