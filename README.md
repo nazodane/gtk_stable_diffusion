@@ -1,6 +1,6 @@
 The GTK Stable Diffusion is a very simple text-to-image tool. The tool is based on [GTK](https://en.wikipedia.org/wiki/GTK) UI framework and [Diffusers](https://github.com/huggingface/diffusers)' [Stable Diffusion](https://en.wikipedia.org/wiki/Stable_Diffusion) text-to-image pipeline.
 
-GTK Stable Diffusion aims just for fun. This means the tool is more focusing on ~~spell~~ prompt than many small adjustment and random generations.
+GTK Stable Diffusion aims just for fun. This means the tool is more focusing on ~~spells~~ prompts than many small adjustments and random generations.
 
 Installation
 ============
