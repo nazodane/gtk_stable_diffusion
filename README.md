@@ -35,7 +35,7 @@ Recommendations
 
 License
 =======
-GTK Stable Diffusion codes are under Apache License 2.0. This is because we almost depends on Diffusers.
+GTK Stable Diffusion codes are under Apache License 2.0. This is because we almost depend on Diffusers.
 
 GTK and [its Python bindings are LGPL](https://www.gtk.org/docs/language-bindings/python) so we should carefully treat GTK-related codes.
 
