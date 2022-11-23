@@ -34,7 +34,7 @@ class GTKStableDiffusion:
         import numpy as np
         global Image
         from PIL import Image
-        from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+        from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
 
@@ -184,7 +184,7 @@ class GTKStableDiffusion:
                     if start != pstart and end != nend:
                         sc = buf.get_text(pstart, start, True)
                         ec = buf.get_text(end, nend, True)
-                        print("is %s:%s %s:%s?"%(sc,ec,neg_char_start,neg_char_end))
+#                        print("is %s:%s %s:%s?"%(sc,ec,neg_char_start,neg_char_end))
                         if (sc == neg_char_start and ec == neg_char_end):
                             buf.delete(end, nend)
                             start, end = buf.get_selection_bounds()
@@ -213,11 +213,11 @@ class GTKStableDiffusion:
                 return
 
             if event.keyval == Gdk.KEY_Up and event.get_state() & Gdk.ModifierType.CONTROL_MASK:
-                print("ctrl+up")
+#                print("ctrl+up")
                 up_or_down("(", ")", "[", "]")
                 return True
             if event.keyval == Gdk.KEY_Down and event.get_state() & Gdk.ModifierType.CONTROL_MASK:
-                print("ctrl+down")
+#                print("ctrl+down")
                 up_or_down( "[", "]", "(", ")")
                 return True
 
