@@ -26,7 +26,7 @@ class GTKStableDiffusion:
         # delayed load for faster start up!
         global autocast
         from torch import autocast
-        from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+        from diffusers import DPMSolverMultistepScheduler
         global torch
         import torch
 #        import os
@@ -34,6 +34,7 @@ class GTKStableDiffusion:
         import numpy as np
         global Image
         from PIL import Image
+        from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
 
@@ -88,8 +89,8 @@ class GTKStableDiffusion:
 #        repo_id = "/home/nazo/.cache/huggingface/diffusers/models--Deltaadams--Hentai-Diffusion/snapshots/8397ec1f41aeb904c9c3de8164fec8383abe0559/"
         repo_id = model_dir
         scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
-        pipe = StableDiffusionPipeline.from_pretrained(repo_id, # revision="fp16",
-           scheduler=scheduler) # safety_checker=None, 
+        pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
+          safety_checker=None,  scheduler=scheduler)
 
         pipe = pipe.to("cuda")
 
@@ -155,6 +156,71 @@ class GTKStableDiffusion:
         self.window.connect('delete_event', exitf)
 
         def tv_kpef(self, event):
+
+            def up_or_down(pos_char_start, pos_char_end, neg_char_start, neg_char_end):
+                buf = self.get_buffer()
+                if buf.get_has_selection():
+#                    buf_start, buf_end = buf.get_bounds()
+                    start, end = buf.get_selection_bounds()
+
+                    text = buf.get_text(start, end, True)
+                    print(text)
+                    if len(text) > 1 and text[0] == neg_char_start and text[-1] == neg_char_end:
+                        pend = end.copy()
+                        pend.backward_char()
+                        buf.delete(pend, end)
+                        start, end = buf.get_selection_bounds()
+                        nstart = start.copy()
+                        nstart.forward_char()
+                        buf.delete(start, nstart)
+                        return
+
+                    pstart = start.copy()
+                    sb = pstart.backward_char()
+                    nend = end.copy()
+                    eb = nend.forward_char()
+
+#                    if sb and eb: # not works
+                    if start != pstart and end != nend:
+                        sc = buf.get_text(pstart, start, True)
+                        ec = buf.get_text(end, nend, True)
+                        print("is %s:%s %s:%s?"%(sc,ec,neg_char_start,neg_char_end))
+                        if (sc == neg_char_start and ec == neg_char_end):
+                            buf.delete(end, nend)
+                            start, end = buf.get_selection_bounds()
+                            pstart = start.copy()
+                            pstart.backward_char()
+                            buf.delete(pstart, start)
+                            return
+
+                    if sb and eb:
+                        sc = buf.get_text(pstart, start, True)
+                        ec = buf.get_text(end, nend, True)
+                        if (sc == neg_char_start and ec == neg_char_end):
+                            buf.delete(end, nend)
+                            start, end = buf.get_selection_bounds()
+                            pstart = start.copy()
+                            pstart.backward_char()
+                            buf.delete(pstart, start)
+                            return
+
+                    buf.insert(end, pos_char_end)
+                    start, end = buf.get_selection_bounds()
+                    end.backward_char()
+                    buf.select_range(start, end) # reset slection position after insert
+                    buf.insert(start, pos_char_start)
+                    # selection
+                return
+
+            if event.keyval == Gdk.KEY_Up and event.get_state() & Gdk.ModifierType.CONTROL_MASK:
+                print("ctrl+up")
+                up_or_down("(", ")", "[", "]")
+                return True
+            if event.keyval == Gdk.KEY_Down and event.get_state() & Gdk.ModifierType.CONTROL_MASK:
+                print("ctrl+down")
+                up_or_down( "[", "]", "(", ")")
+                return True
+
             if event.keyval != Gdk.KEY_Return:
                 return False
             if self._parent.processing or not self._parent.delay_inited:
