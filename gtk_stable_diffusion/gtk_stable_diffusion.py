@@ -289,7 +289,31 @@ class GTKStableDiffusion:
         self.image = Gtk.Image()
         self.image.set_pixel_size(512)
 
-        self.image_hbox.pack_start(self.image, False, False, 0)
+        def on_save(self):
+            self._parent.debug_label.set_markup('<big><b>Saving...</b></big>')
+            prompt_buf = self._parent.prompt_tv.get_buffer()
+            prompt = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
+            self._parent.image.get_pixbuf().savev("%s.png"%prompt, "png") # TODO: should consider negative prompt
+            self._parent.debug_label.set_markup('<big><b>Saving: Done.</b></big>')
+
+        def show_menu(self, event):
+            if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3:
+                return
+            menu = Gtk.Menu()
+            save_menu = Gtk.MenuItem.new_with_label("Save")
+            save_menu._parent = self._parent
+            save_menu.connect("activate", on_save)
+            menu.append(save_menu)
+            if len(self._parent.ls) == 0:
+                return
+            save_menu.show()
+            menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
+
+        self.eb = Gtk.EventBox()
+        self.eb.add(self.image)
+        self.eb._parent = self
+        self.eb.connect("button-press-event", show_menu)
+        self.image_hbox.pack_start(self.eb, False, False, 0)
 
         self.iv = Gtk.IconView.new()
         self.ls = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
