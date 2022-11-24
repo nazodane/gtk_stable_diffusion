@@ -192,7 +192,7 @@ class GTKStableDiffusion:
         self.tv.set_model(None)
         self.ls2.clear()
         for i, p in enumerate(y):
-            if p >= 0.5:
+            if p >= 0.2:
                 self.ls2.append([model.tags[i], p])
 #end
         sorted_ls2 = Gtk.TreeModelSort(self.ls2)
