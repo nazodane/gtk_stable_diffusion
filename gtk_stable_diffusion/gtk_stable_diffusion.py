@@ -152,10 +152,8 @@ class GTKStableDiffusion:
 #        self.processing = False
 
     def inspect_process(self):
-        # TODO: sort list
         #       torchscript?
         import deep_danbooru_model
-
 
         deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
         if not os.path.exists(deep_danbooru_path):
@@ -197,7 +195,9 @@ class GTKStableDiffusion:
             if p >= 0.5:
                 self.ls2.append([model.tags[i], p])
 #end
-        self.tv.set_model(self.ls2)
+        sorted_ls2 = Gtk.TreeModelSort(self.ls2)
+        sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
+        self.tv.set_model(sorted_ls2)
         self.debug_label.set_markup('<big><b>Inspecting: Done</b></big>')
         self.processing = False
 
