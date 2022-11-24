@@ -24,23 +24,28 @@ import threading
 class GTKStableDiffusion:
     def sd_init(self):
         # delayed load for faster start up!
+        global os
+        import os
+        global np
+        import numpy as np
+        global Image
+        from PIL import Image
+
         global autocast
         from torch import autocast
         from diffusers import DPMSolverMultistepScheduler
         global torch
         import torch
-#        import os
-        global np
-        import numpy as np
-        global Image
-        from PIL import Image
         from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
 
-        import os
+        global Path
         from pathlib import Path
+        global home
         home = str(Path.home())
+        global config_dir
+        config_dir = home + "/.config/gtk-stable-diffusion/"
         model_dir = home + "/.cache/huggingface/diffusers/sd-v1-4/"
 
         model_dir_check = model_dir + "unet/diffusion_pytorch_model.bin"
@@ -332,8 +337,84 @@ class GTKStableDiffusion:
         self.iv._parent = self
 
         img_frame = wrap_frame(self.iv)
-        img_frame.set_size_request(64*2, -1) # XXX: size is not optimal
-        self.image_hbox.add(img_frame)
+#        img_frame.set_size_request(64*2, -1) # XXX: size is not optimal
+
+        self.nb = Gtk.Notebook()
+        self.nb.set_tab_pos(Gtk.PositionType.TOP)
+        self.nb.append_page(img_frame)
+        self.nb.set_tab_label_text(img_frame, "History")
+
+        self.tv = Gtk.TreeView()
+        renderer = Gtk.CellRendererText()
+        column = Gtk.TreeViewColumn("Tag", renderer, text=0)
+        self.tv.append_column(column)
+        column = Gtk.TreeViewColumn("Probability", renderer, text=1)
+        self.tv.append_column(column)
+
+        self.ls2 = Gtk.ListStore(str, float)
+        self.tv.set_model(self.ls2)
+
+        tv_frame = wrap_frame(self.tv)
+        self.nb.append_page(tv_frame)
+        self.nb.set_tab_label_text(tv_frame, "Inspect") # Inspect current image tags for negative prompt
+
+        def nb_switchf(self, widget, num):
+            if num != 1 or len(self._parent.ls) == 0 or not self._parent.delay_inited:
+                return
+            # TODO: model downloader
+            #       should be async
+            #       img update hook
+            #       sort list
+            #       torchscript?
+            import deep_danbooru_model
+
+            self._parent.debug_label.set_markup('<big><b>Inspecting...</b></big>')
+
+            deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
+            if not os.path.exists(deep_danbooru_path):
+                os.makedirs(config_dir, exist_ok=True)
+                self._parent.debug_label.set_markup('<big><b>Inspecting: Downloading...</b></big>')
+# https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt
+                self._parent.debug_label.set_markup('<big><b>Inspecting: Downloading: Failed (not implement)</b></big>')
+                return
+
+# begin
+# copied and adopted from TorchDeepDanbooru/test.py
+# MIT License
+# Copyright (c) 2022 AUTOMATIC1111
+            model = deep_danbooru_model.DeepDanbooruModel()
+            model.load_state_dict(torch.load(deep_danbooru_path))
+
+            model.eval()
+            model.half()
+            model.cuda()
+            pic = np.frombuffer(self._parent.image.get_pixbuf().get_pixels(), dtype=np.uint8).reshape((1, 512, 512, 3))
+            a = np.array(pic / 255, dtype=np.float32)
+            import tqdm
+
+            with torch.no_grad(), torch.autocast("cuda"):
+                x = torch.from_numpy(a).cuda()
+
+                # first run
+                y = model(x)[0].detach().cpu().numpy()
+
+                # measure performance
+#                for n in tqdm.tqdm(range(10)):
+#                    model(x)
+
+            self._parent.tv.set_model(None)
+            self._parent.ls2.clear()
+            for i, p in enumerate(y):
+                if p >= 0.5:
+                    self._parent.ls2.append([model.tags[i], p])
+#end
+            self._parent.tv.set_model(self._parent.ls2)
+            self._parent.debug_label.set_markup('<big><b>Inspecting: Done</b></big>')
+
+        self.nb._parent = self
+        self.nb.connect("switch-page", nb_switchf)
+
+        self.image_hbox.add(self.nb)
 
         self.vbox.add(self.image_hbox)
 

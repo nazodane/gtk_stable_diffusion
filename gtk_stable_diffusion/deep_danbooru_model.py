@@ -1,0 +1,1 @@
+/home/nazo/Desktop/dl/stable-diffusion-local/gtk_stable_diffusion/gtk_stable_diffusion/TorchDeepDanbooru/deep_danbooru_model.py

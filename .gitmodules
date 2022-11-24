@@ -1,0 +1,3 @@
+[submodule "gtk_stable_diffusion/TorchDeepDanbooru"]
+	path = gtk_stable_diffusion/TorchDeepDanbooru
+	url = https://github.com/AUTOMATIC1111/TorchDeepDanbooru
