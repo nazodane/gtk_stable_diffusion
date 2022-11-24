@@ -36,7 +36,10 @@ class GTKStableDiffusion:
         from diffusers import DPMSolverMultistepScheduler
         global torch
         import torch
-        from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+        try:
+            from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+        except:
+            from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
 
@@ -153,7 +156,10 @@ class GTKStableDiffusion:
 
     def inspect_process(self):
         #       torchscript?
-        import deep_danbooru_model
+        try:
+            from .deep_danbooru_model import DeepDanbooruModel
+        except:
+            from deep_danbooru_model import DeepDanbooruModel
 
         deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
         if not os.path.exists(deep_danbooru_path):
@@ -169,7 +175,7 @@ class GTKStableDiffusion:
 # copied and adopted from TorchDeepDanbooru/test.py
 # MIT License
 # Copyright (c) 2022 AUTOMATIC1111
-        model = deep_danbooru_model.DeepDanbooruModel()
+        model = DeepDanbooruModel()
         model.load_state_dict(torch.load(deep_danbooru_path))
 
         model.eval()
@@ -195,7 +201,7 @@ class GTKStableDiffusion:
             if p >= 0.2:
                 self.ls2.append([model.tags[i], p])
 #end
-        sorted_ls2 = Gtk.TreeModelSort(self.ls2)
+        sorted_ls2 = Gtk.TreeModelSort.new_with_model(self.ls2)
         sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
         self.tv.set_model(sorted_ls2)
         self.debug_label.set_markup('<big><b>Inspecting: Done</b></big>')
