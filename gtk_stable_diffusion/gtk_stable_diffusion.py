@@ -148,11 +148,11 @@ class GTKStableDiffusion:
                 self.ls.append([pixbuf_prev, prompt, neg_prompt])
 
         self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
-        self.processing = False
+        self.inspect_process()
+#        self.processing = False
 
     def inspect_process(self):
         # TODO: model downloader
-        #       img update hook
         #       sort list
         #       torchscript?
         import deep_danbooru_model
@@ -391,8 +391,6 @@ class GTKStableDiffusion:
 
         self.nb = Gtk.Notebook()
         self.nb.set_tab_pos(Gtk.PositionType.TOP)
-        self.nb.append_page(img_frame)
-        self.nb.set_tab_label_text(img_frame, "History")
 
         self.tv = Gtk.TreeView()
         renderer = Gtk.CellRendererText()
@@ -408,14 +406,17 @@ class GTKStableDiffusion:
         self.nb.append_page(tv_frame)
         self.nb.set_tab_label_text(tv_frame, "Inspect") # Inspect current image tags for negative prompt
 
-        def nb_switchf(self, widget, num):
-            if num != 1 or len(self._parent.ls) == 0 or not self._parent.delay_inited or self._parent.processing:
-                return
-            self._parent.processing = True
-            threading.Thread(target=self._parent.inspect_process).start()
+        self.nb.append_page(img_frame)
+        self.nb.set_tab_label_text(img_frame, "History")
+
+#        def nb_switchf(self, widget, num):
+#            if num != 0 or len(self._parent.ls) == 0 or not self._parent.delay_inited or self._parent.processing:
+#                return
+#            self._parent.processing = True
+#            threading.Thread(target=self._parent.inspect_process).start()
 
         self.nb._parent = self
-        self.nb.connect("switch-page", nb_switchf)
+#        self.nb.connect("switch-page", nb_switchf)
 
         self.image_hbox.add(self.nb)
 
