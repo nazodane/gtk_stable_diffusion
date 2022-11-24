@@ -152,8 +152,7 @@ class GTKStableDiffusion:
 #        self.processing = False
 
     def inspect_process(self):
-        # TODO: model downloader
-        #       sort list
+        # TODO: sort list
         #       torchscript?
         import deep_danbooru_model
 
@@ -163,7 +162,9 @@ class GTKStableDiffusion:
         if not os.path.exists(deep_danbooru_path):
             os.makedirs(config_dir, exist_ok=True)
             self.debug_label.set_markup('<big><b>Inspecting: Downloading...</b></big>')
-# https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt
+            from urllib.request import urlretrieve
+            deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
+            urlretrieve(deepdanbooru_url, deep_danbooru_path)
             self.debug_label.set_markup('<big><b>Inspecting: Downloading: Failed (not implement)</b></big>')
             return
 
