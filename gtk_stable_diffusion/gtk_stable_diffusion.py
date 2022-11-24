@@ -293,7 +293,9 @@ class GTKStableDiffusion:
             self._parent.debug_label.set_markup('<big><b>Saving...</b></big>')
             prompt_buf = self._parent.prompt_tv.get_buffer()
             prompt = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
-            self._parent.image.get_pixbuf().savev("%s.png"%prompt, "png") # TODO: should consider negative prompt
+            neg_prompt_buf = self._parent.neg_prompt_tv.get_buffer()
+            neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
+            self._parent.image.get_pixbuf().savev("%s||||%s.png"%(prompt,neg_prompt), "png") # XXX: more better naming rule?
             self._parent.debug_label.set_markup('<big><b>Saving: Done.</b></big>')
 
         def show_menu(self, event):
