@@ -156,31 +156,12 @@ class GTKStableDiffusion:
 #        self.processing = False
 
     def inspect_process(self, img_arr):
-        try:
-            from .deep_danbooru_model import DeepDanbooruModel
-        except:
-            from deep_danbooru_model import DeepDanbooruModel
-
-        deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
-        if not os.path.exists(deep_danbooru_path):
-            os.makedirs(config_dir, exist_ok=True)
-            self.debug_label.set_markup('<big><b>Processing: Inspecting: Downloading...</b></big>')
-            from urllib.request import urlretrieve
-            deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
-            urlretrieve(deepdanbooru_url, deep_danbooru_path)
-
         self.debug_label.set_markup('<big><b>Processing: Inspecting...</b></big>')
 
 # begin
 # copied and adopted from TorchDeepDanbooru/test.py
 # MIT License
 # Copyright (c) 2022 AUTOMATIC1111
-        model = DeepDanbooruModel()
-        model.load_state_dict(torch.load(deep_danbooru_path))
-
-        model.eval()
-        model.half()
-        model.cuda()
 #        pic = np.frombuffer(self.image.get_pixbuf().get_pixels(), dtype=np.uint8).reshape((1, 512, 512, 3))
 #        a = np.array(pic / 255, dtype=np.float32)
         a = img_arr
@@ -188,7 +169,27 @@ class GTKStableDiffusion:
             x = torch.from_numpy(a).cuda()
 
             if not self.traced_fn:
+                deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
+                if not os.path.exists(deep_danbooru_path):
+                    os.makedirs(config_dir, exist_ok=True)
+                    self.debug_label.set_markup('<big><b>Processing: Inspecting: Downloading...</b></big>')
+                    from urllib.request import urlretrieve
+                    deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
+                    urlretrieve(deepdanbooru_url, deep_danbooru_path)
+
+                try:
+                    from .deep_danbooru_model import DeepDanbooruModel
+                except:
+                    from deep_danbooru_model import DeepDanbooruModel
+                global model
+                model = DeepDanbooruModel()
+                model.load_state_dict(torch.load(deep_danbooru_path))
+
+                model.eval()
+                model.half()
+                model.cuda()
                 self.traced_fn = torch.jit.trace(model, example_inputs=[x])
+
             y = self.traced_fn(x)[0].detach().cpu().numpy()
 
         self.tv.set_model(None)
