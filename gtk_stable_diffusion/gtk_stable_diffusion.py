@@ -24,6 +24,9 @@ import threading
 class GTKStableDiffusion:
     def sd_init(self):
         # delayed load for faster start up!
+        import faulthandler
+        faulthandler.enable()
+
         global os
         import os
         global np
