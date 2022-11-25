@@ -29,6 +29,9 @@ class GTKStableDiffusion:
 
         global os
         import os
+        global shutil
+        import shutil
+
         global np
         import numpy as np
         global Image
@@ -56,7 +59,6 @@ class GTKStableDiffusion:
         config_file_path = config_dir + "config.toml"
         model_dir = home + "/.cache/huggingface/diffusers/sd-v1-4/"
 
-
 # Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
 # Although we just implement toml dump as text dump because
 # toml.load with toml.TomlPreserveCommentDecoder and toml.dump with toml.TomlPreserveCommentEncoder are completely broken.
@@ -80,9 +82,6 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         if not os.path.exists(config_file_path):
             os.makedirs(config_dir, exist_ok=True)
             dump_config({}) # initialize config
-
-        global shutil
-        import shutil
 
         import toml
         try:
