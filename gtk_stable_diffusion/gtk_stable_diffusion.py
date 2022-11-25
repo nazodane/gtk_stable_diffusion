@@ -123,39 +123,39 @@ class GTKStableDiffusion:
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
 
         with autocast("cuda"):
-            for i in range(1):
-                torch.manual_seed(i+1)
-                tensorsa = self.tensorsa
-                tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
+            torch.manual_seed(1)
+            tensorsa = self.tensorsa
+            tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
 
-                # black magic
-                latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
-                                     tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
+            # black magic
+            latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
+                                 tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
 
-                image = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents).images[0]
-                arr = np.array(image).flatten()
-                pixbuf = GdkPixbuf.Pixbuf.new_from_data(arr, GdkPixbuf.Colorspace.RGB,
-                                                        False, 8, image.size[1], image.size[0], 3*image.size[1])
-                self.image.set_from_pixbuf(pixbuf)
+            img_arr = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="numpy").images # [0]
+            img_ubarr = (img_arr * 255).round().astype("uint8")
+            pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
+                                                        False, 8, 512, 512, 3*512)
+            self.image.set_from_pixbuf(pixbuf)
+
+            self.inspect_process(img_arr)
 
 # make preview
-                if not self.preview_generate: # re-generate from history
-                    self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
-                    self.processing = False
-                    return
-                img_prev = image.resize((64, 64), Image.Resampling.LANCZOS)
-                arr_prev = np.array(img_prev).flatten()
-                pixbuf_prev = GdkPixbuf.Pixbuf.new_from_data(arr_prev, GdkPixbuf.Colorspace.RGB,
-                                                        False, 8, img_prev.size[1], img_prev.size[0], 3*img_prev.size[1])
+            if not self.preview_generate: # re-generate from history
+                self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
+                self.processing = False
+                return
 
-                self.ls.append([pixbuf_prev, prompt, neg_prompt])
+            self.debug_label.set_markup('<big><b>Processing: Preview Generating...</b></big>')
+            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).resize((64, 64), Image.Resampling.LANCZOS))
+            pixbuf_prev = GdkPixbuf.Pixbuf.new_from_data(img_prev_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
+                                                        False, 8, 64, 64, 3*64)
+
+            self.ls.append([pixbuf_prev, prompt, neg_prompt])
 
         self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
-        self.inspect_process()
 #        self.processing = False
 
-    def inspect_process(self):
-        #       torchscript?
+    def inspect_process(self, img_arr):
         try:
             from .deep_danbooru_model import DeepDanbooruModel
         except:
@@ -164,12 +164,12 @@ class GTKStableDiffusion:
         deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
         if not os.path.exists(deep_danbooru_path):
             os.makedirs(config_dir, exist_ok=True)
-            self.debug_label.set_markup('<big><b>Inspecting: Downloading...</b></big>')
+            self.debug_label.set_markup('<big><b>Processing: Inspecting: Downloading...</b></big>')
             from urllib.request import urlretrieve
             deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
             urlretrieve(deepdanbooru_url, deep_danbooru_path)
 
-        self.debug_label.set_markup('<big><b>Inspecting...</b></big>')
+        self.debug_label.set_markup('<big><b>Processing: Inspecting...</b></big>')
 
 # begin
 # copied and adopted from TorchDeepDanbooru/test.py
@@ -181,19 +181,15 @@ class GTKStableDiffusion:
         model.eval()
         model.half()
         model.cuda()
-        pic = np.frombuffer(self.image.get_pixbuf().get_pixels(), dtype=np.uint8).reshape((1, 512, 512, 3))
-        a = np.array(pic / 255, dtype=np.float32)
-        import tqdm
-
+#        pic = np.frombuffer(self.image.get_pixbuf().get_pixels(), dtype=np.uint8).reshape((1, 512, 512, 3))
+#        a = np.array(pic / 255, dtype=np.float32)
+        a = img_arr
         with torch.no_grad(), torch.autocast("cuda"):
             x = torch.from_numpy(a).cuda()
 
-            # first run
-            y = model(x)[0].detach().cpu().numpy()
-
-            # measure performance
-#            for n in tqdm.tqdm(range(10)):
-#                model(x)
+            if not self.traced_fn:
+                self.traced_fn = torch.jit.trace(model, example_inputs=[x])
+            y = self.traced_fn(x)[0].detach().cpu().numpy()
 
         self.tv.set_model(None)
         self.ls2.clear()
@@ -204,7 +200,7 @@ class GTKStableDiffusion:
         sorted_ls2 = Gtk.TreeModelSort.new_with_model(self.ls2)
         sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
         self.tv.set_model(sorted_ls2)
-        self.debug_label.set_markup('<big><b>Inspecting: Done</b></big>')
+        self.debug_label.set_markup('<big><b>Processing: Inspecting: Done</b></big>')
         self.processing = False
 
     def __init__(self):
@@ -446,8 +442,9 @@ class GTKStableDiffusion:
         self.window.add(self.vbox)
         self.window.show_all()
 
-# TODO: save and auto save?
+# TODO: auto save?
 
+        self.traced_fn = None
         threading.Thread(target=self.sd_init).start()
 
 def main():
