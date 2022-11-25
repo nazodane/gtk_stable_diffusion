@@ -38,7 +38,7 @@ install_requires = [
 
 setup(
     name = "gtk_stable_diffusion",
-    version = "0.0.5.2",
+    version = "0.0.5.3",
     author = "Toshimitsu Kimura",
     author_email = "lovesyao@gmail.com",
     description = ("A simple GTK UI for Stable Diffusion."),
