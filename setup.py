@@ -32,6 +32,8 @@ install_requires = [
 
     "libtorrent", # for model weights downloader
     "omegaconf", # for convert_original_stable_diffusion_to_diffusers.py
+
+    "toml",
 ]
 
 setup(

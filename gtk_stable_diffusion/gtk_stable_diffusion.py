@@ -52,7 +52,47 @@ class GTKStableDiffusion:
         home = str(Path.home())
         global config_dir
         config_dir = home + "/.config/gtk-stable-diffusion/"
+        global config_file_path
+        config_file_path = config_dir + "config.toml"
         model_dir = home + "/.cache/huggingface/diffusers/sd-v1-4/"
+
+
+# Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
+# Although we just implement toml dump as text dump because
+# toml.load with toml.TomlPreserveCommentDecoder and toml.dump with toml.TomlPreserveCommentEncoder are completely broken.
+        global dump_config
+        def dump_config(conf):
+            f_path = config_file_path
+            toml_txt =  f"""
+# nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
+# It's your responsibility to cater to your regulating authority wishes, not by us.
+nsfw_filter = {"false" if "nsfw_filter" in conf and not conf["nsfw_filter"] else "true"}
+
+# show_nsfw_filter_toggle is for you who don't want to change the nsfw toggle. [default=true]
+show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not conf["show_nsfw_filter_toggle"] else "true"}
+"""
+
+            if os.path.exists(f_path):
+                shutil.copy(config_file_path, config_file_path + ".bak") # save backup config
+            with open(f_path, 'w') as f:
+                f.write(toml_txt)
+
+        if not os.path.exists(config_file_path):
+            os.makedirs(config_dir, exist_ok=True)
+            dump_config({}) # initialize config
+
+        global shutil
+        import shutil
+
+        import toml
+        try:
+            self.conf = toml.load(config_file_path)
+        except:
+            shutil.copy(config_file_path, config_file_path + ".err")
+            try:
+                self.conf = toml.load(config_file_path+".bak") # read from backup config
+            except:
+                dump_config({}) # initialize config
 
         model_dir_check = model_dir + "unet/diffusion_pytorch_model.bin"
         if not os.path.exists(model_dir_check):
@@ -101,7 +141,7 @@ class GTKStableDiffusion:
         repo_id = model_dir
         scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
         pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
-          safety_checker=None,  scheduler=scheduler)
+            scheduler=scheduler)
 
         pipe = pipe.to("cuda")
 
@@ -134,7 +174,15 @@ class GTKStableDiffusion:
             latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
                                  tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
 
+            if "nsfw_filter" in self.conf and self.conf["nsfw_filter"] == False:
+                _safety_checker = self.pipe.safety_checker
+                self.pipe.safety_checker = None
+
             img_arr = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="numpy").images # [0]
+
+            if "nsfw_filter" in self.conf and self.conf["nsfw_filter"] == False:
+                self.pipe.safety_checker = _safety_checker
+
             img_ubarr = (img_arr * 255).round().astype("uint8")
             pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 512, 512, 3*512)
@@ -359,16 +407,32 @@ class GTKStableDiffusion:
             self._parent.debug_label.set_markup('<big><b>Saving: Done.</b></big>')
 
         def show_menu(self, event):
-            if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3:
+            if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3 or not self._parent.delay_inited:
                 return
             menu = Gtk.Menu()
-            save_menu = Gtk.MenuItem.new_with_label("Save")
-            save_menu._parent = self._parent
-            save_menu.connect("activate", on_save)
-            menu.append(save_menu)
-            if len(self._parent.ls) == 0:
+            menu_count = 0
+            if "show_nsfw_filter_toggle" in self._parent.conf and self._parent.conf["show_nsfw_filter_toggle"]:
+                nsfwf_menu = Gtk.CheckMenuItem.new_with_label("NSFW Filter OFF")
+                nsfwf_menu._parent = self._parent
+                nsfwf_menu.set_active(True if "nsfw_filter" in self._parent.conf and not self._parent.conf["nsfw_filter"] else False)
+                menu.append(nsfwf_menu)
+                def on_nsfwf_toggle(self):
+                    self._parent.conf["nsfw_filter"] = not self.get_active()
+                    dump_config(self._parent.conf)
+                nsfwf_menu.connect("toggled", on_nsfwf_toggle)
+                nsfwf_menu.show()
+                menu_count += 1
+
+            if len(self._parent.ls) > 0:
+                save_menu = Gtk.MenuItem.new_with_label("Save")
+                save_menu._parent = self._parent
+                save_menu.connect("activate", on_save)
+                menu.append(save_menu)
+                save_menu.show()
+                menu_count += 1
+
+            if menu_count == 0:
                 return
-            save_menu.show()
             menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
 
         self.eb = Gtk.EventBox()
