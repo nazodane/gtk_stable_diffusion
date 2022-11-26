@@ -1,4 +1,4 @@
-# copied from https://github.com/huggingface/diffusers/blame/44e56de9aaaa103ad11ca2953dc86ba6f64ba5d4/examples/community/lpw_stable_diffusion.py
+# copied and modified from https://github.com/huggingface/diffusers/blame/44e56de9aaaa103ad11ca2953dc86ba6f64ba5d4/examples/community/lpw_stable_diffusion.py
 
 import inspect
 import re
@@ -847,8 +847,10 @@ class StableDiffusionLongPromptWeightingPipeline(DiffusionPipeline):
 
         image = (image / 2 + 0.5).clamp(0, 1)
 
-        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloa16
-        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+#        # we always cast to float32 as this does not cause significant overhead and is compatible with bfloa16
+#        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+
+        image = image.permute(0, 2, 3, 1) # XXX: modified by gtk_stable_diffusion project
 
         if self.safety_checker is not None:
             safety_checker_input = self.feature_extractor(self.numpy_to_pil(image), return_tensors="pt").to(

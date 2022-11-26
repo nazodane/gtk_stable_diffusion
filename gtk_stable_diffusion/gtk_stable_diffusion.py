@@ -177,9 +177,9 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                                  tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
 
 
-            img_arr = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="numpy").images # [0]
+            img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
 
-            show_img_arr = img_arr
+            img_arr = img_tensor.cpu().float().numpy()
             if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
 # copied and adopted from
 # https://github.com/huggingface/diffusers/blob/2c6bc0f13ba2ba609ac141022b4b56b677d74943/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
@@ -192,15 +192,15 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     print("NSFW")
                     img[0] = img[0].copy().resize((16, 16), resample=Image.Resampling.BILINEAR)\
                                    .resize((512, 512), Image.Resampling.NEAREST)
-                    show_img_arr = np.array(img[0]) / 255.0
-                    show_img_arr = np.array([show_img_arr])
+                    img_arr = np.array(img[0]) / 255.0
+                    img_arr = np.array([img_arr])
 
-            img_ubarr = (show_img_arr * 255).round().astype("uint8")
+            img_ubarr = (img_arr * 255).round().astype("uint8")
             pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 512, 512, 3*512)
             self.image.set_from_pixbuf(pixbuf)
 
-            self.inspect_process(img_arr)
+            self.inspect_process(img_tensor)
 
 # make preview
             if not self.preview_generate: # re-generate from history
@@ -218,20 +218,17 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
         self.processing = False
 
-    def inspect_process(self, img_arr):
+    def inspect_process(self, img_tensor):
         self.debug_label.set_markup('<big><b>Processing: Inspecting...</b></big>')
 
-# begin
-# copied and adopted from TorchDeepDanbooru/test.py
-# MIT License
-# Copyright (c) 2022 AUTOMATIC1111
-#        pic = np.frombuffer(self.image.get_pixbuf().get_pixels(), dtype=np.uint8).reshape((1, 512, 512, 3))
-#        a = np.array(pic / 255, dtype=np.float32)
-        a = img_arr
         with torch.no_grad(), torch.autocast("cuda"):
-            x = torch.from_numpy(a).cuda()
-
             if not self.traced_fn:
+                try:
+                    from .deep_danbooru_model import DeepDanbooruModel
+                except:
+                    from deep_danbooru_model import DeepDanbooruModel
+                global model
+
                 deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
                 if not os.path.exists(deep_danbooru_path):
                     os.makedirs(config_dir, exist_ok=True)
@@ -240,27 +237,25 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
                     urlretrieve(deepdanbooru_url, deep_danbooru_path)
 
-                try:
-                    from .deep_danbooru_model import DeepDanbooruModel
-                except:
-                    from deep_danbooru_model import DeepDanbooruModel
-                global model
                 model = DeepDanbooruModel()
                 model.load_state_dict(torch.load(deep_danbooru_path))
 
-                model.eval()
-                model.half()
-                model.cuda()
-                self.traced_fn = torch.jit.trace(model, example_inputs=[x])
+                deep_danbooru_ts_path = config_dir + "deep_danbooru.pt"
+                if not os.path.exists(deep_danbooru_ts_path):
+                    model.eval()
+                    model.half().cuda()
+                    traced_fn = torch.jit.trace(model, example_inputs=[img_tensor])
+                    torch.jit.save(traced_fn, deep_danbooru_ts_path)
+                self.traced_fn = torch.jit.load(deep_danbooru_ts_path)
 
-            y = self.traced_fn(x)[0].detach().cpu().numpy()
+            y = self.traced_fn(img_tensor)[0].detach().cpu().numpy()
 
         self.tv.set_model(None)
         self.ls2.clear()
         for i, p in enumerate(y):
             if p >= 0.2:
                 self.ls2.append([model.tags[i], p])
-#end
+
         sorted_ls2 = Gtk.TreeModelSort.new_with_model(self.ls2)
         sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
         self.tv.set_model(sorted_ls2)
