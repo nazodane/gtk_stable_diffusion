@@ -18,7 +18,7 @@
 import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version('GtkSource', '3.0')
-from gi.repository import Gtk, Gdk, Pango, GdkPixbuf, GtkSource
+from gi.repository import Gtk, Gdk, Pango, GdkPixbuf, GtkSource, GLib
 import threading
 
 class GTKStableDiffusion:
@@ -112,10 +112,10 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             hdl = sess.add_torrent(mag)
 
-            self.debug_label.set_markup('<big><b>Initializing: Downloading: Metadata</b></big>')
+            self.status_update('<big><b>Initializing: Downloading: Metadata</b></big>')
             while (not hdl.status().has_metadata):
                 time.sleep(1)
-            self.debug_label.set_markup('<big><b>Initializing: Downloading: Data</b></big>')
+            self.status_update('<big><b>Initializing: Downloading: Data</b></big>')
             while (hdl.status().state != lt.torrent_status.seeding):
                 s = hdl.status()
 
@@ -127,10 +127,10 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
                 state_str = ['queued', 'checking', 'downloading metadata', \
                         'downloading', 'finished', 'seeding', 'allocating']
-                self.debug_label.set_markup('<big><b>Initializing: Downloading: %s</b></big>'% (
-                                            '%.2f%% complete (down: %.1f kb/s up: %.1f kB/s peers: %d) %s' % \
-                                            (s.progress * 100, s.download_rate / 1000, s.upload_rate / 1000, \
-                                             s.num_peers, state_str[s.state])))
+                self.status_update('<big><b>Initializing: Downloading: %s</b></big>'% ( \
+                                  '%.2f%% complete (down: %.1f kb/s up: %.1f kB/s peers: %d) %s' % \
+                                  (s.progress * 100, s.download_rate / 1000, s.upload_rate / 1000, \
+                                  s.num_peers, state_str[s.state])))
                 time.sleep(1)
 # end
 
@@ -155,7 +155,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         torch.manual_seed(0)
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
-        self.debug_label.set_markup('<big><b>Initializing: Done.</b></big>')
+        self.status_update('<big><b>Initializing: Done.</b></big>')
         self.delay_inited = True
 
     def process(self):
@@ -164,21 +164,25 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         neg_prompt_buf = self.neg_prompt_tv.get_buffer()
         neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
 
-        self.debug_label.set_markup('<big><b>Processing...</b></big>')
+        self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
-
+#        print("done -6")
         with autocast("cuda"):
+#            print("done -5")
             torch.manual_seed(1)
+#            print("done -4")
             tensorsa = self.tensorsa
+#            print("done -3")
             tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
+#            print("done -2")
 
             # black magic
             latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
                                  tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
-
+#            print("done -1")
 
             img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
-
+#            print("done1")
             img_arr = img_tensor.cpu().float().numpy()
             if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
 # copied and adopted from
@@ -190,41 +194,55 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 )
                 if has_nsfw_concept[0]:
                     print("NSFW")
-                    img[0] = img[0].copy().resize((16, 16), resample=Image.Resampling.BILINEAR)\
+                    img[0] = img[0].resize((16, 16), resample=Image.Resampling.BILINEAR)\
                                    .resize((512, 512), Image.Resampling.NEAREST)
                     img_arr = np.array(img[0]) / 255.0
                     img_arr = np.array([img_arr])
-
+#            print("done2")
             img_ubarr = (img_arr * 255).round().astype("uint8")
+#            print("done3")
             pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 512, 512, 3*512)
+#            print("done4")
             self.image.set_from_pixbuf(pixbuf)
+#            print("done5")
 
             self.inspect_process(img_tensor)
 
+#            print("done16")
 # make preview
             if not self.preview_generate: # re-generate from history
-                self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
+                self.status_update('<big><b>Processing: Done.</b></big>')
                 self.processing = False
                 return
+#            print("done17")
 
-            self.debug_label.set_markup('<big><b>Processing: Preview Generating...</b></big>')
-            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).copy().resize((64, 64), Image.Resampling.LANCZOS))
+            self.status_update('<big><b>Processing: Preview Generating...</b></big>')
+#            print("done18")
+            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).resize((64, 64), Image.Resampling.LANCZOS))
             pixbuf_prev = GdkPixbuf.Pixbuf.new_from_data(img_prev_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 64, 64, 3*64)
 
+#            print("done19")
             self.ls.append([pixbuf_prev, prompt, neg_prompt])
+#            print("done20")
 
-        self.debug_label.set_markup('<big><b>Processing: Done.</b></big>')
+#        print("done21")
+        self.status_update('<big><b>Processing: Done.</b></big>')
+#        print("done22")
         self.processing = False
+#        print("done23")
 
     def inspect_process(self, img_tensor):
-        self.debug_label.set_markup('<big><b>Processing: Inspecting...</b></big>')
+#        print("done6")
+        self.status_update('<big><b>Processing: Inspecting...</b></big>')
+#        print("done7")
 
 #        import time
 #        time_sta = time.perf_counter()
 
         with torch.no_grad():# , torch.autocast("cuda")
+#            print("done8")
             if not self.traced_fn:
                 try:
                     from .deep_danbooru_model import DeepDanbooruModel
@@ -235,7 +253,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
                 if not os.path.exists(deep_danbooru_path):
                     os.makedirs(config_dir, exist_ok=True)
-                    self.debug_label.set_markup('<big><b>Processing: Inspecting: Downloading...</b></big>')
+                    self.status_update('<big><b>Processing: Inspecting: Downloading...</b></big>')
                     from urllib.request import urlretrieve
                     deepdanbooru_url = "https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt"
                     urlretrieve(deepdanbooru_url, deep_danbooru_path)
@@ -252,7 +270,9 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
                 self.traced_fn = torch.jit.load(deep_danbooru_ts_path)
 
+#            print("done9")
             y = self.traced_fn(img_tensor)
+#            print("done10")
 
 #            time_mid = time.perf_counter()
 
@@ -260,20 +280,24 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             mask = y >= 0.02
             y = y[mask].cpu().numpy()
             y_idx = torch.nonzero(mask)
+#            print("done11")
 
             self.ls2 = Gtk.ListStore(str, float)
+#            print("done12")
             for i, p in enumerate(y):
                 self.ls2.append([model.tags[y_idx[i]], p])
+#            print("done13")
 
 #            time_end1 = time.perf_counter()
 
         sorted_ls2 = Gtk.TreeModelSort.new_with_model(self.ls2)
         sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
         self.tv.set_model(sorted_ls2)
-
+#        print("done14")
 #        time_end2 = time.perf_counter()
 
-        self.debug_label.set_markup('<big><b>Processing: Inspecting: Done</b></big>')
+        self.status_update('<big><b>Processing: Inspecting: Done</b></big>')
+#        print("done15")
 
     def __init__(self):
         self.delay_inited = False
@@ -401,6 +425,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         self.debug_label = Gtk.Label()
         self.debug_label.set_markup('<big><b>Initializing...</b></big>')
+        self.status_update = lambda x: GLib.idle_add(lambda self:self.debug_label.set_markup(x), self)
 
         self.vbox = Gtk.VBox()
 
