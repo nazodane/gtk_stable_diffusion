@@ -22,7 +22,7 @@ target-version = ['py310']
 
 #[project]
 #name = "gtk-stable-diffusion"
-#version = "0.0.5.4"
+#version = "0.0.5.5"
 #description = "A simple GTK UI for Stable Diffusion."
 #license = "Apache-2.0"
 #authors = [
