@@ -22,16 +22,18 @@ Note that the model weights are automatically downloaded via [BitTorrent magnet 
 
 Requirements
 ============
-* Ubuntu 22.04 or later
+* Linux
 * Python 3.10 or later
 * CUDA 11.7 or later
-* higher VRAM and DRAM
+* DRAM 16GB or higher
+* RTX 3060 12GB or higher (the VRAM usage is over 8GB currently!)
 
 Recommendations
 ===============
-* RTX 3060 12GB or higher
-* DRAM 32GB
-* Faster non-restricted internet connection
+* Ubuntu 22.04 or later
+* DRAM 32GB or higher
+* NVMe SSD
+* Faster non-restricted internet connections
 
 License
 =======
