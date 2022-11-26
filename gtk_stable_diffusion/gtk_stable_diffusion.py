@@ -224,7 +224,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 #        import time
 #        time_sta = time.perf_counter()
 
-        with torch.no_grad(), torch.autocast("cuda"):
+        with torch.no_grad():# , torch.autocast("cuda")
             if not self.traced_fn:
                 try:
                     from .deep_danbooru_model import DeepDanbooruModel
@@ -249,6 +249,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     model.half().cuda()
                     traced_fn = torch.jit.trace(model, example_inputs=[img_tensor])
                     torch.jit.save(traced_fn, deep_danbooru_ts_path)
+
                 self.traced_fn = torch.jit.load(deep_danbooru_ts_path)
 
             y = self.traced_fn(img_tensor)
