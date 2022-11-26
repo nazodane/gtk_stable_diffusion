@@ -35,7 +35,8 @@ class GTKStableDiffusion:
         global np
         import numpy as np
         global Image
-        from PIL import Image
+        global ImageFilter
+        from PIL import Image, ImageFilter
 
         global autocast
         from torch import autocast
@@ -141,6 +142,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
         pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
             scheduler=scheduler)
+        self.safety_checker = pipe.safety_checker
+        pipe.safety_checker = None
 
         pipe = pipe.to("cuda")
 
@@ -173,16 +176,26 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
                                  tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
 
-            if "nsfw_filter" in self.conf and self.conf["nsfw_filter"] == False:
-                _safety_checker = self.pipe.safety_checker
-                self.pipe.safety_checker = None
 
             img_arr = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="numpy").images # [0]
 
-            if "nsfw_filter" in self.conf and self.conf["nsfw_filter"] == False:
-                self.pipe.safety_checker = _safety_checker
+            show_img_arr = img_arr
+            if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
+# copied and adopted from
+# https://github.com/huggingface/diffusers/blob/2c6bc0f13ba2ba609ac141022b4b56b677d74943/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
+                img = self.pipe.numpy_to_pil(img_arr)
+                safety_checker_input = self.pipe.feature_extractor(img, return_tensors="pt").to("cuda")
+                _, has_nsfw_concept = self.safety_checker(
+                    images=img_arr, clip_input=safety_checker_input.pixel_values.to("cpu")
+                )
+                if has_nsfw_concept[0]:
+                    print("NSFW")
+                    img[0] = img[0].copy().resize((16, 16), resample=Image.Resampling.BILINEAR)\
+                                   .resize((512, 512), Image.Resampling.NEAREST)
+                    show_img_arr = np.array(img[0]) / 255.0
+                    show_img_arr = np.array([show_img_arr])
 
-            img_ubarr = (img_arr * 255).round().astype("uint8")
+            img_ubarr = (show_img_arr * 255).round().astype("uint8")
             pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 512, 512, 3*512)
             self.image.set_from_pixbuf(pixbuf)
@@ -196,7 +209,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 return
 
             self.debug_label.set_markup('<big><b>Processing: Preview Generating...</b></big>')
-            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).resize((64, 64), Image.Resampling.LANCZOS))
+            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).copy().resize((64, 64), Image.Resampling.LANCZOS))
             pixbuf_prev = GdkPixbuf.Pixbuf.new_from_data(img_prev_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 64, 64, 3*64)
 
