@@ -26,7 +26,7 @@ Requirements
 * Python 3.10 or later
 * CUDA 11.7 or later
 * DRAM 16GB or higher
-* RTX 3060 12GB or higher (the VRAM usage is over 8GB currently!)
+* RTX 3060 12GB or higher (the VRAM usage is currently over 8GB!)
 
 Recommendations
 ===============
