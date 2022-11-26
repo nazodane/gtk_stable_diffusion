@@ -221,6 +221,9 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
     def inspect_process(self, img_tensor):
         self.debug_label.set_markup('<big><b>Processing: Inspecting...</b></big>')
 
+#        import time
+#        time_sta = time.perf_counter()
+
         with torch.no_grad(), torch.autocast("cuda"):
             if not self.traced_fn:
                 try:
@@ -248,17 +251,27 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     torch.jit.save(traced_fn, deep_danbooru_ts_path)
                 self.traced_fn = torch.jit.load(deep_danbooru_ts_path)
 
-            y = self.traced_fn(img_tensor)[0].detach().cpu().numpy()
+            y = self.traced_fn(img_tensor)
 
-        self.tv.set_model(None)
-        self.ls2.clear()
-        for i, p in enumerate(y):
-            if p >= 0.2:
-                self.ls2.append([model.tags[i], p])
+#            time_mid = time.perf_counter()
+
+            y = y[0].detach()
+            mask = y >= 0.02
+            y = y[mask].cpu().numpy()
+            y_idx = torch.nonzero(mask)
+
+            self.ls2 = Gtk.ListStore(str, float)
+            for i, p in enumerate(y):
+                self.ls2.append([model.tags[y_idx[i]], p])
+
+#            time_end1 = time.perf_counter()
 
         sorted_ls2 = Gtk.TreeModelSort.new_with_model(self.ls2)
         sorted_ls2.set_sort_column_id(1, Gtk.SortType.DESCENDING)
         self.tv.set_model(sorted_ls2)
+
+#        time_end2 = time.perf_counter()
+
         self.debug_label.set_markup('<big><b>Processing: Inspecting: Done</b></big>')
 
     def __init__(self):
@@ -475,8 +488,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         column = Gtk.TreeViewColumn("Probability", renderer, text=1)
         self.tv.append_column(column)
 
-        self.ls2 = Gtk.ListStore(str, float)
-        self.tv.set_model(self.ls2)
+#        self.ls2 = Gtk.ListStore(str, float)
+#        self.tv.set_model(self.ls2)
 
         tv_frame = wrap_frame(self.tv)
         self.nb.append_page(tv_frame)
