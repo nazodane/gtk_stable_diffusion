@@ -70,14 +70,22 @@ def split_arr(tup):
 
 import regex as re
 
-# to avoid gtkview's pcre limitation
+# to avoid gtksource's pcre limitation
 tags = []
 for a in tags_raw:
-    tags += re.split("[_-]", a)
+#    tags += re.split('[_-]|\:|\(|\)|ing|er|ed|on', a)
+    tags += re.split('[_-]|\:|\(|\)', a)
 tags = list(dict.fromkeys(tags)) # deduplication
 #print(tags)
 
-tags = [a for a in tags if len(a)<8]
+tags = [a for a in tags if len(a)<9]
+
+#[i for i in tags if len(i)>8]
+# hmm...split the prefix and postfix?
+# Counter([i[0:4] for i in tags]).most_common(1)
+# co, han, shin, over, hoshi, under, sweat, cross, inter, sakura, breast, finger, person, express, antenna, project, feather, horizon, protect, mecha, etc...
+# Counter([i[-3:] for i in tags]).most_common(1)
+# ing, er, ed on, etc...
 
 #tags = [a for a in tags_raw if len(a)<11]
 
@@ -121,7 +129,8 @@ print "\\n";
         txt = f.read()
 
     print('<context id="tags%s" style-ref="tags%s">'%(idx+1,idx+1))
-    print("<match>(^| |_|-)%s</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
+    print("<match>(^| |_|-|\\:|\\[|\\(|_\\\\\\()%s\\\\?(\\)|\\])?</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
+#    print("<match>(^| |_|-|\\:|\\[|\\(|_\\\\\\()%s\\\\?(\\)|\\]|ing|er|ed|on)?</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
     print('</context>')
 
 print(footer)
