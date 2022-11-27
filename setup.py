@@ -46,6 +46,7 @@ setup(
     keywords = "stable_diffusion diffusers",
     url = "https://github.com/nazodane/gtk_stable_diffusion",
     packages=['gtk_stable_diffusion'],
+    include_package_data = True,
     long_description=read('README.md'),
     python_requires=">=3.10.0",
     install_requires=install_requires,

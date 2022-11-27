@@ -20,15 +20,13 @@ gi.require_version("Gtk", "3.0")
 gi.require_version('GtkSource', '3.0')
 from gi.repository import Gtk, Gdk, Pango, GdkPixbuf, GtkSource, GLib
 import threading
+import os
 
 class GTKStableDiffusion:
     def sd_init(self):
         # delayed load for faster start up!
         import faulthandler
         faulthandler.enable()
-
-        global os
-        import os
         global shutil
         import shutil
 
@@ -49,7 +47,7 @@ class GTKStableDiffusion:
             from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
-
+ 
         global Path
         from pathlib import Path
         global home
@@ -403,12 +401,17 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             return True
 
-        def new_prompt_textview(self):
+#        lang_file_path = os.path.dirname(__file__) + "sd_prompt.lang"
+        lm = GtkSource.LanguageManager()
+        lm.set_search_path(lm.get_search_path()+[os.path.dirname(__file__)])
+
+        def new_prompt_textview(self, lm):
             buf = GtkSource.Buffer()
+#            print(lm.get_language_ids())
+            buf.set_language(lm.get_language("sd_prompt"))
             tv = GtkSource.View(buffer=buf)
             tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
             tv.set_accepts_tab(False)
-
             # get font height
             fontsize = -1
             pg_ctx = tv.get_pango_context()
@@ -420,8 +423,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             tv.connect('key-press-event', tv_kpef)
             tv._parent = self
             return tv
-        self.prompt_tv = new_prompt_textview(self)
-        self.neg_prompt_tv = new_prompt_textview(self)
+        self.prompt_tv = new_prompt_textview(self, lm)
+        self.neg_prompt_tv = new_prompt_textview(self, lm)
 
         self.debug_label = Gtk.Label()
         self.debug_label.set_markup('<big><b>Initializing...</b></big>')
