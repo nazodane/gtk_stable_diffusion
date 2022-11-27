@@ -74,7 +74,7 @@ import regex as re
 tags = []
 for a in tags_raw:
     tags += re.split("[_-]", a)
-tags = list(dict.fromkeys(tags)) # duplication
+tags = list(dict.fromkeys(tags)) # deduplication
 #print(tags)
 
 tags = [a for a in tags if len(a)<8]
