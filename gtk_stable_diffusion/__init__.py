@@ -1,2 +1,2 @@
-__version__ = "0.0.5.5"
+__version__ = "0.0.6"
 from .gtk_stable_diffusion import main
