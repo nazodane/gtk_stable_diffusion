@@ -1,1 +1,1 @@
-global-include *data/*.lang
+global-include *gtk_stable_diffusion/*.lang
