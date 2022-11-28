@@ -38,9 +38,11 @@ class GTKStableDiffusion:
 
         global autocast
         from torch import autocast
+        global DPMSolverMultistepScheduler
         from diffusers import DPMSolverMultistepScheduler
         global torch
         import torch
+        global StableDiffusionLongPromptWeightingPipeline
         try:
             from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
         except:
@@ -56,7 +58,24 @@ class GTKStableDiffusion:
         config_dir = home + "/.config/gtk-stable-diffusion/"
         global config_file_path
         config_file_path = config_dir + "config.toml"
-        model_dir = home + "/.cache/huggingface/diffusers/sd-v1-4/"
+
+        global usable_models
+        usable_models = {}
+        hf_df_dir = home + "/.cache/huggingface/diffusers/"
+        if os.path.exists(hf_df_dir):
+            for d in os.listdir(hf_df_dir): # auto search usable weights
+                rev_path = hf_df_dir + d + "/refs/main"
+                if not os.path.exists(rev_path):
+                    repo_path = hf_df_dir + d + "/" # not standard but we used it
+                    if os.path.exists(repo_path + "unet/diffusion_pytorch_model.bin"):
+                        usable_models[d] = repo_path
+                    continue
+                with open(rev_path, "r") as f:
+                    rev = f.read().replace("\n", "")
+                repo_path = hf_df_dir + d + "/snapshots/" + rev + "/"
+                if not os.path.exists(repo_path) or not os.path.exists(repo_path + "unet/diffusion_pytorch_model.bin"):
+                    continue
+                usable_models[d] = repo_path
 
 # Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
 # Although we just implement toml dump as text dump because
@@ -65,6 +84,9 @@ class GTKStableDiffusion:
         def dump_config(conf):
             f_path = config_file_path
             toml_txt =  f"""
+# current_model is the current stable-diffusion weights you to use.
+current_model = "{conf["current_model"] if "current_model" in conf and conf["current_model"] in usable_models else "sd-v1-4"}"
+
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
 nsfw_filter = {"false" if "nsfw_filter" in conf and not conf["nsfw_filter"] else "true"}
@@ -92,10 +114,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             except:
                 dump_config({}) # initialize config
 
-        model_dir_check = model_dir + "unet/diffusion_pytorch_model.bin"
-        if not os.path.exists(model_dir_check):
+        if not len(usable_models):
             import libtorrent as lt
             import time
+
+            model_dir = home + "/.cache/huggingface/diffusers/sd-v1-4/"
 
             sess = lt.session({"enable_dht": True})
 
@@ -135,7 +158,26 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             os.system("python %s/convert_original_stable_diffusion_to_diffusers.py --checkpoint_path %s --dump_path %s"% \
                       (os.path.dirname(__file__), model_ckpt, model_dir))
 
-#        repo_id = "/home/nazo/.cache/huggingface/diffusers/models--Deltaadams--Hentai-Diffusion/snapshots/8397ec1f41aeb904c9c3de8164fec8383abe0559/"
+            usable_models["sd-v1-4"] = model_dir
+
+        self.processing = True
+        self.delay_inited = True
+        self.process_modelload()
+
+    def process_modelload(self):
+        model_dir = None
+        model_id = ""
+
+        print(len(usable_models))
+
+        if "current_model" in self.conf and self.conf["current_model"] in usable_models:
+            model_id = self.conf["current_model"]
+            model_dir = usable_models[model_id]
+
+        print("current model dir: " + model_dir)
+
+        self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
+
         repo_id = model_dir
         scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
         pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
@@ -146,15 +188,17 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         pipe = pipe.to("cuda")
 
         pipe.enable_xformers_memory_efficient_attention()
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cuda.matmul.allow_tf32 = True
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
         pipe.unet.to(memory_format=torch.channels_last)  # in-place operation
 
         torch.manual_seed(0)
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
-        self.status_update('<big><b>Initializing: Done.</b></big>')
-        self.delay_inited = True
+        self.status_update('<big><b>Model Loading (%s): Done</b></big>'%(model_id))
+        self.processing = False
 
     def process(self):
         prompt_buf = self.prompt_tv.get_buffer()
@@ -455,6 +499,14 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             self._parent.image.get_pixbuf().savev("%s||||%s.png"%(prompt,neg_prompt), "png") # XXX: more better naming rule?
             self._parent.debug_label.set_markup('<big><b>Saving: Done.</b></big>')
 
+        def on_model_change(self):
+            model_id = self.get_label()
+            self._parent.conf["current_model"] = model_id
+            dump_config(self._parent.conf)
+            
+            self._parent.processing = True
+            self._parent.process_modelload()
+
         def show_menu(self, event):
             if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3 or not self._parent.delay_inited:
                 return
@@ -470,6 +522,21 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     dump_config(self._parent.conf)
                 nsfwf_menu.connect("toggled", on_nsfwf_toggle)
                 nsfwf_menu.show()
+                menu_count += 1
+
+            if len(usable_models) > 1:
+                model_menu = Gtk.MenuItem.new_with_label("Change Current Model")
+                model_menu_child = Gtk.Menu()
+                model_menu.set_submenu(model_menu_child)
+                for m_name in usable_models:
+                    mmenu = Gtk.CheckMenuItem.new_with_label(m_name)
+                    mmenu.set_active(True if "current_model" in self._parent.conf and m_name == self._parent.conf["current_model"] else False)
+                    mmenu._parent = self._parent
+                    mmenu.connect("activate", on_model_change)
+                    model_menu_child.append(mmenu)
+                    mmenu.show()
+                menu.append(model_menu)
+                model_menu.show()
                 menu_count += 1
 
             if len(self._parent.ls) > 0:
