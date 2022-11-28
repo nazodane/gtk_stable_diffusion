@@ -505,7 +505,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             dump_config(self._parent.conf)
             
             self._parent.processing = True
-            self._parent.process_modelload()
+            threading.Thread(target=self._parent.process_modelload).start()
 
         def show_menu(self, event):
             if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3 or not self._parent.delay_inited:
