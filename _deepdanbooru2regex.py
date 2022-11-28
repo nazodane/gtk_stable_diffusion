@@ -30,6 +30,7 @@ header = """<?xml version="1.0" encoding="UTF-8"?>
 
   <styles>
     <style id="tags1" name="Tags1" map-to="def:keyword"/>
+    <style id="tags2" _name="Tags2" map-to="def:type"/>
 <!--
     <style id="tags2" _name="Tags2" map-to="def:type"/>
     <style id="tags3" _name="Tags3" map-to="def:string"/>
@@ -60,6 +61,26 @@ footer = """
 
 print(header)
 
+# romaji recognization
+bo_on="aiueo"
+shi_on="kstnhfmyrwgzdbpj"
+shi2_on="tskysyshcychnyhymyrygyzybypy" # bhph
+shi3_on="" # bhph
+
+import regex as re
+
+romajis = ["n"]
+
+for s in bo_on:
+    romajis += [s]
+for s in shi_on:
+    romajis += [s + b for b in bo_on] + [s + s + b for b in bo_on]
+for i in range(len(shi2_on)//2):
+    romajis += [shi2_on[i*2:i*2+2] + b for b in bo_on] + \
+               [shi2_on[i*2] + shi2_on[i*2:i*2+2] + b for b in bo_on] # yossya
+
+is_romaji = "(?:"+("|".join(romajis))+")+"
+
 tags_raw = model.tags
 
 def split_arr(tup):
@@ -68,17 +89,19 @@ def split_arr(tup):
         r += [x[0:len(x)//2], x[len(x)//2:]]
     return r
 
-import regex as re
-
 # to avoid gtksource's pcre limitation
 tags = []
 for a in tags_raw:
 #    tags += re.split('[_-]|\:|\(|\)|ing|er|ed|on', a)
     tags += re.split('[_-]|\:|\(|\)', a)
 tags = list(dict.fromkeys(tags)) # deduplication
+
+tags = [t for t in tags if not re.match("^"+is_romaji+"$", t)]
+# print(len(tags))
+
 #print(tags)
 
-tags = [a for a in tags if len(a)<9]
+#tags = [a for a in tags if len(a)<9]
 
 #[i for i in tags if len(i)>8]
 # hmm...split the prefix and postfix?
@@ -129,8 +152,12 @@ print "\\n";
         txt = f.read()
 
     print('<context id="tags%s" style-ref="tags%s">'%(idx+1,idx+1))
-    print("<match>(^| |_|-|\\:|\\[|\\(|_\\\\\\()%s\\\\?(\\)|\\])?</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
+    print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?= |$)</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
 #    print("<match>(^| |_|-|\\:|\\[|\\(|_\\\\\\()%s\\\\?(\\)|\\]|ing|er|ed|on)?</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
     print('</context>')
+
+print('<context id="tags2" style-ref="tags2">')
+print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?= |$)</match>"%(is_romaji))
+print('</context>')
 
 print(footer)
