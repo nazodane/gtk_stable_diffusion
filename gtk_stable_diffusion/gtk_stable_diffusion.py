@@ -84,7 +84,7 @@ class GTKStableDiffusion:
         def dump_config(conf):
             f_path = config_file_path
             toml_txt =  f"""
-# current_model is the current stable-diffusion weights you to use.
+# current_model is the current stable-diffusion weights for you to use. [default="sd-v1-4"]
 current_model = "{conf["current_model"] if "current_model" in conf and conf["current_model"] in usable_models else "sd-v1-4"}"
 
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
