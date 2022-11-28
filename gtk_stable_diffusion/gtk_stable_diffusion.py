@@ -20,7 +20,11 @@ gi.require_version("Gtk", "3.0")
 gi.require_version('GtkSource', '3.0')
 from gi.repository import Gtk, Gdk, Pango, GdkPixbuf, GtkSource, GLib
 import threading
-import os
+import os, sys
+
+parent_dir = os.path.dirname(os.path.abspath(__file__))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
 class GTKStableDiffusion:
     def sd_init(self):
@@ -43,10 +47,10 @@ class GTKStableDiffusion:
         global torch
         import torch
         global StableDiffusionLongPromptWeightingPipeline
-        try:
-            from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
-        except:
-            from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+#        try:
+#            from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+#        except:
+        from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
  
@@ -61,12 +65,26 @@ class GTKStableDiffusion:
 
         global usable_models
         usable_models = {}
+
+# original sd model check -> diffusers model check
+        webui_dir = home + "/stable-diffusion-webui/models/Stable-diffusion/"
+        if os.path.exists(webui_dir):
+            for f in os.listdir(webui_dir):
+                if f[-5:] == ".ckpt":
+                    usable_models[f[:-5]] = webui_dir + f
+
+
         hf_df_dir = home + "/.cache/huggingface/diffusers/"
         if os.path.exists(hf_df_dir):
             for d in os.listdir(hf_df_dir): # auto search usable weights
                 rev_path = hf_df_dir + d + "/refs/main"
                 if not os.path.exists(rev_path):
                     repo_path = hf_df_dir + d + "/" # not standard but we used it
+
+                    for f in os.listdir(repo_path):
+                        if f[-5:] == ".ckpt": # something like the model before converting...
+                            usable_models[f[:-5]] = repo_path + f
+
                     if os.path.exists(repo_path + "unet/diffusion_pytorch_model.bin"):
                         usable_models[d] = repo_path
                     continue
@@ -76,6 +94,7 @@ class GTKStableDiffusion:
                 if not os.path.exists(repo_path) or not os.path.exists(repo_path + "unet/diffusion_pytorch_model.bin"):
                     continue
                 usable_models[d] = repo_path
+
 
 # Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
 # Although we just implement toml dump as text dump because
@@ -168,7 +187,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         model_dir = None
         model_id = ""
 
-        print(len(usable_models))
+        print(usable_models)
 
         if "current_model" in self.conf and self.conf["current_model"] in usable_models:
             model_id = self.conf["current_model"]
@@ -178,10 +197,86 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
 
+        self.pipe = None
+        torch.cuda.empty_cache()
+
         repo_id = model_dir
-        scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
-        pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
-            scheduler=scheduler)
+        pipe = None
+        if repo_id[-5:] == ".ckpt": # original sd model
+            from transformers import AutoFeatureExtractor, BertTokenizerFast, CLIPTextModel, CLIPTokenizer
+            from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
+            import diffusers
+
+# parameters are from https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml
+            scheduler = DPMSolverMultistepScheduler(
+                beta_start=0.00085,
+                beta_end=0.012,
+                beta_schedule="scaled_linear",
+            )
+
+            import time
+            time_sta = time.perf_counter()
+
+            checkpoint = torch.load(repo_id, map_location="cuda:0")
+            state_dict = checkpoint["state_dict"]
+
+            from ckpt_and_diffusers_mapping import unet_ckpt_and_diffusers_mapping, \
+                vae_ckpt_and_diffusers_mapping_noconv, vae_ckpt_and_diffusers_mapping_conv, text_model_ckpt_and_diffusers_mapping
+
+            unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
+                           'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
+                           'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
+                           'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
+
+            unet_state_dict = {}
+            unet = diffusers.UNet2DConditionModel(**unet_config)
+            for (ckpt, dif) in unet_ckpt_and_diffusers_mapping:
+                unet_state_dict[dif] = state_dict.pop(ckpt)
+
+            unet.load_state_dict(unet_state_dict)
+
+            vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
+                          'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
+                          'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
+                          'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
+
+            vae_state_dict = {}
+            vae = diffusers.AutoencoderKL(**vae_config)
+            for (ckpt, dif) in vae_ckpt_and_diffusers_mapping_noconv:
+#                vae.state_dict()[dif] = state_dict.pop(ckpt)
+                vae_state_dict[dif] = state_dict.pop(ckpt)
+
+            for (ckpt, dif) in vae_ckpt_and_diffusers_mapping_conv:
+#                vae.state_dict()[dif] = state_dict.pop(ckpt)
+                vae_state_dict[dif] = state_dict.pop(ckpt).reshape([512, 512])
+
+            vae.load_state_dict(vae_state_dict)
+
+
+            state_dict_text_model = {}
+            text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+            for (ckpt, dif) in text_model_ckpt_and_diffusers_mapping:
+                state_dict_text_model[dif] = state_dict.pop(ckpt)
+            text_model.load_state_dict(state_dict_text_model) # XXX: we should fix errors
+
+            tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+            safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
+            feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+
+            pipe = StableDiffusionLongPromptWeightingPipeline(
+                vae=vae,
+                text_encoder=text_model,
+                tokenizer=tokenizer,
+                unet=unet,
+                scheduler=scheduler,
+                safety_checker=safety_checker,
+                feature_extractor=feature_extractor,
+            )
+        else:
+            scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
+            pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
+                scheduler=scheduler)
+
         self.safety_checker = pipe.safety_checker
         pipe.safety_checker = None
 
@@ -286,10 +381,10 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         with torch.no_grad():# , torch.autocast("cuda")
 #            print("done8")
             if not self.traced_fn:
-                try:
-                    from .deep_danbooru_model import DeepDanbooruModel
-                except:
-                    from deep_danbooru_model import DeepDanbooruModel
+#                try:
+#                    from .deep_danbooru_model import DeepDanbooruModel
+#                except:
+                from deep_danbooru_model import DeepDanbooruModel
                 global model
 
                 deep_danbooru_path = config_dir + 'model-resnet_custom_v3.pt'
