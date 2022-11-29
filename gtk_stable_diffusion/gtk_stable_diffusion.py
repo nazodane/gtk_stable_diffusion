@@ -197,16 +197,31 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
 
-        self.pipe = None
-        self.safety_checker = None
-        torch.cuda.empty_cache()
+#        self.pipe = None
+#        self.safety_checker = None
+#        torch.cuda.empty_cache()
 
         repo_id = model_dir
         pipe = None
+        import time
+        time_sta = time.perf_counter()
+
         if repo_id[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
             from transformers import AutoFeatureExtractor, BertTokenizerFast, CLIPTextModel, CLIPTokenizer
             from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
             import diffusers
+            from ckpt_to_diffusers import ckpt_to_diffusers
+            from free_weights import free_weights
+
+            if hasattr(self, "pipe") and self.pipe:
+                free_weights(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
+                torch.cuda.empty_cache()
+                state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+                ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
+                time_end = time.perf_counter()
+                self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+                self.processing = False
+                return
 
 # parameters are from https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml
             scheduler = DPMSolverMultistepScheduler(
@@ -217,14 +232,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             state_dict = torch.load(repo_id)["state_dict"]
 
-            from ckpt_to_diffusers import ckpt_to_diffusers
-
             unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
                            'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
                            'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
                            'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
 
-            unet_state_dict = {}
             unet = diffusers.UNet2DConditionModel(**unet_config)
 
             vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
@@ -232,10 +244,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                           'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
                           'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
 
-            vae_state_dict = {}
             vae = diffusers.AutoencoderKL(**vae_config)
 
-            state_dict_text_model = {}
             text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
 
             ckpt_to_diffusers(state_dict, unet, vae, text_model)
@@ -253,6 +263,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 safety_checker=safety_checker,
                 feature_extractor=feature_extractor,
             )
+#            free_weights(pipe.unet, pipe.vae, pipe.text_encoder)
+#            torch.cuda.empty_cache()
+#            state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+#            ckpt_to_diffusers(state_dict, unet, vae, text_model)
+
         else:
             scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
             pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
@@ -273,7 +288,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         torch.manual_seed(0)
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
-        self.status_update('<big><b>Model Loading (%s): Done</b></big>'%(model_id))
+        time_end = time.perf_counter()
+        self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
         self.processing = False
 
     def process(self):
