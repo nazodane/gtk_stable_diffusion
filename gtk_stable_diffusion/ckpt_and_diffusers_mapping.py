@@ -956,8 +956,7 @@ vae_ckpt_and_diffusers_mapping_conv = (
     ("first_stage_model.decoder.mid.attn_1.proj_out.weight", "decoder.mid_block.attentions.0.proj_attn.weight"),
 )
 
-text_model_ckpt_and_diffusers_mapping = (
-    ('cond_stage_model.transformer.text_model.embeddings.position_ids', 'text_model.embeddings.position_ids'),
+text_model_ckpt_and_diffusers_mapping_noconv = (
     ('cond_stage_model.transformer.text_model.embeddings.token_embedding.weight', 'text_model.embeddings.token_embedding.weight'),
     ('cond_stage_model.transformer.text_model.embeddings.position_embedding.weight', 'text_model.embeddings.position_embedding.weight'),
     ('cond_stage_model.transformer.text_model.encoder.layers.0.self_attn.k_proj.weight', 'text_model.encoder.layers.0.self_attn.k_proj.weight'),
@@ -1154,4 +1153,8 @@ text_model_ckpt_and_diffusers_mapping = (
     ('cond_stage_model.transformer.text_model.encoder.layers.11.layer_norm2.bias', 'text_model.encoder.layers.11.layer_norm2.bias'),
     ('cond_stage_model.transformer.text_model.final_layer_norm.weight', 'text_model.final_layer_norm.weight'),
     ('cond_stage_model.transformer.text_model.final_layer_norm.bias', 'text_model.final_layer_norm.bias'),
+)
+
+text_model_ckpt_and_diffusers_mapping_conv = (
+    ('cond_stage_model.transformer.text_model.embeddings.position_ids', 'text_model.embeddings.position_ids'),
 )

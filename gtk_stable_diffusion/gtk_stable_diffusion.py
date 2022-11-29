@@ -217,8 +217,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             state_dict = torch.load(repo_id)["state_dict"]
 
-            from ckpt_and_diffusers_mapping import unet_ckpt_and_diffusers_mapping, \
-                vae_ckpt_and_diffusers_mapping_noconv, vae_ckpt_and_diffusers_mapping_conv, text_model_ckpt_and_diffusers_mapping
+            from ckpt_to_diffusers import ckpt_to_diffusers
 
             unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
                            'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
@@ -227,11 +226,6 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             unet_state_dict = {}
             unet = diffusers.UNet2DConditionModel(**unet_config)
-            for (ckpt, dif) in unet_ckpt_and_diffusers_mapping:
-                unet_state_dict[dif] = state_dict.pop(ckpt)
-
-            unet.load_state_dict(unet_state_dict)
-            del unet_state_dict
 
             vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
                           'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
@@ -240,24 +234,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             vae_state_dict = {}
             vae = diffusers.AutoencoderKL(**vae_config)
-            for (ckpt, dif) in vae_ckpt_and_diffusers_mapping_noconv:
-#                vae.state_dict()[dif] = state_dict.pop(ckpt)
-                vae_state_dict[dif] = state_dict.pop(ckpt)
-
-            for (ckpt, dif) in vae_ckpt_and_diffusers_mapping_conv:
-#                vae.state_dict()[dif] = state_dict.pop(ckpt)
-                vae_state_dict[dif] = state_dict.pop(ckpt).reshape([512, 512])
-
-            vae.load_state_dict(vae_state_dict)
-            del vae_state_dict
 
             state_dict_text_model = {}
             text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
-            for (ckpt, dif) in text_model_ckpt_and_diffusers_mapping:
-                state_dict_text_model[dif] = state_dict.pop(ckpt)
-            text_model.load_state_dict(state_dict_text_model) # XXX: we should fix errors
 
-            del state_dict_text_model, state_dict
+            ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
             tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
             safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
