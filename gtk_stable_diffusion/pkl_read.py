@@ -54,7 +54,7 @@ def pickle_to_datalist(d):
 
     return d
 
-def pickle_data_read(fpath, keys=None):
+def pickle_data_read(fpath, read_list=None, write_to_tensor=False):
 # fl = int.from_bytes(b[26:28], byteorder="little") # filename length
 # el = int.from_bytes(b[28:30], byteorder="little") # extra field length
 # dl = int.from_bytes(b[18:22], byteorder="little") # compressed data length -- 0???
@@ -98,13 +98,20 @@ def pickle_data_read(fpath, keys=None):
         for i in info_list:
             fn = i.filename.split("/")[-1]
             if fn in data_dict:
-                if keys and data_dict[fn] not in keys:
+                key = data_dict[fn]
+                if read_list and key not in read_list:
                     continue
                 f.seek(i.header_offset + 28)
                 base = i.header_offset + 30 + len(i.filename) + \
                        int.from_bytes(f.read(2), byteorder="little")
                 f.seek(base)
-                result_dict[data_dict[fn]] = f.read(i.file_size)
+                if not write_to_tensor:
+                    result_dict[key] = f.read(i.file_size)
+                elif read_list:
+                    f.readinto(read_list[key].numpy())
+                else:
+                    print("Error: write_to_tensor=True needs read_list")
+                    return False
 #                print("%s = ./data/%s = data[%s:%s]"%(data_dict[fn], fn, base, base+i.file_size))
 
 ## open
@@ -118,10 +125,33 @@ def pickle_data_read(fpath, keys=None):
 
 #    io_uring_prep_read(sqe, fd, iov[0].iov_base, iov[0].iov_len, offset)
 
+## using cufile?
+#    import kvikio
+#    with kvikio.CuFile(path, "r") as f:
+#        x = f.pread(buf, sz, file_offset=off)
+#        x.get()
+
     return result_dict
 
-#print(pickle_data_read("/home/nazo/.cache/huggingface/diffusers/sd-v1-4/sd-v1-4.ckpt", \
+
+# pickle_data_read("/home/nazo/.cache/huggingface/diffusers/sd-v1-4/sd-v1-4.ckpt")
+
+# print(pickle_data_read("/home/nazo/.cache/huggingface/diffusers/sd-v1-4/sd-v1-4.ckpt", \
 #                       ["cond_stage_model.transformer.text_model.encoder.layers.3.layer_norm2.weight",
 #                        "cond_stage_model.transformer.text_model.encoder.layers.3.mlp.fc2.bias"]))
 
+# import torch
+# import numpy as np
+
+# pkl = pickle_data_read("/home/nazo/.cache/huggingface/diffusers/sd-v1-4/sd-v1-4.ckpt", ["model.diffusion_model.time_embed.0.weight"])
+# a =  torch.Tensor(np.frombuffer(pkl["model.diffusion_model.time_embed.0.weight"], dtype="float32")).reshape((1280, 320))
+# print(a)
+# sd = torch.load()["state_dict"]
+# b = sd["model.diffusion_model.time_embed.0.weight"]
+# print(a==b)
+
+# a = torch.empty((1280, 320), dtype=torch.float32)
+# pickle_data_read("/home/nazo/.cache/huggingface/diffusers/sd-v1-4/sd-v1-4.ckpt",\
+#                 {"model.diffusion_model.time_embed.0.weight": a}, write_to_tensor = True)
+# print(a)
 
