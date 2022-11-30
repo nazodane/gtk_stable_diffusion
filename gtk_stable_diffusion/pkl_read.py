@@ -114,7 +114,7 @@ def pickle_data_read(fpath, read_list=None, write_to_tensor=False):
                     tarr = read_list[key].numpy()
                     tarr_sz = tarr.size * tarr.itemsize
 
-                    f.readinto(tarr)
+                    f.readinto(tarr) # XXX: overread on fp16 model...
                     if i.file_size == tarr_sz:
                         continue
 
@@ -124,11 +124,16 @@ def pickle_data_read(fpath, read_list=None, write_to_tensor=False):
                         read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.half)[0:tarr.size]).reshape(read_list[key].shape)
 #                        result_dict = "half" # XXX
                         continue
+                    if read_list[key].dtype == torch.int64 and i.file_size * 2 == tarr_sz: # used in RD1412.ckpt
+#                        print("...assuming float: ok")
+                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.float32)[0:tarr.size]).reshape(read_list[key].shape).long() # XXX: reallocate the buffer...
+                        continue
                     if read_list[key].dtype == torch.int64 and i.file_size * 4 == tarr_sz: # used in trinart_characters_it4_v1.ckpt
 #                        print("...assuming half float: ok")
                         read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.half)[0:tarr.size]).reshape(read_list[key].shape).long() # XXX: reallocate the buffer...
                         continue
-                    print("tensor size and file size is mismatching... (%s vs %s) at %s"%(i.file_size, tarr_sz, key))
+                    print("tensor size and file size is mismatching... (%s vs %s:%s) at %s"%(i.file_size, tarr_sz, read_list[key].dtype, key))
+                    #       (103680 vs 46080) at model.diffusion_model.input_blocks.0.0.weight @ sd-v1-5-inpainting
 
                 else:
                     print("Error: write_to_tensor=True needs read_list")
