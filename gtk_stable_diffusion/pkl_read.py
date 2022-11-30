@@ -49,7 +49,7 @@ def pickle_to_datalist(d):
     while i < len(arr):
         while i < len(arr) and re.search(r'^\d+', arr[i]):
             arr.pop(0)
-        if i >= len(arr):
+        if i+1 >= len(arr):
             break
         d[arr[i+1]] = arr[i]
 #        print("%s = ./data/%s = data[%s:%s]"%(arr[i], arr[i+1], 0,0))
@@ -118,17 +118,15 @@ def pickle_data_read(fpath, read_list=None, write_to_tensor=False):
                     if i.file_size == tarr_sz:
                         continue
 
-# XXX: not working yet...
 #                    print("tensor size and file size is mismatching... (%s vs %s) at %s"%(i.file_size, tarr_sz, key))
                     if read_list[key].dtype == torch.float32 and i.file_size * 2 == tarr_sz:
 #                        print("...assuming half float: ok")
                         read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.half)[0:tarr.size]).reshape(read_list[key].shape)
-                        result_dict = "half" # XXX
+#                        result_dict = "half" # XXX
                         continue
                     if read_list[key].dtype == torch.int64 and i.file_size * 4 == tarr_sz: # used in trinart_characters_it4_v1.ckpt
-#                        print("...assuming int16: ok")
-#                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.int16)[0:tarr.size]).reshape(read_list[key].shape)
-                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.int16)[0:tarr.size]).reshape(read_list[key].shape).long() # XXX: reallocate the buffer...
+#                        print("...assuming half float: ok")
+                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.half)[0:tarr.size]).reshape(read_list[key].shape).long() # XXX: reallocate the buffer...
                         continue
                     print("tensor size and file size is mismatching... (%s vs %s) at %s"%(i.file_size, tarr_sz, key))
 
