@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
+import torch
+
 def pickle_to_datalist(d):
     import regex as re
 # http://formats.kaitai.io/python_pickle/
@@ -108,7 +111,27 @@ def pickle_data_read(fpath, read_list=None, write_to_tensor=False):
                 if not write_to_tensor:
                     result_dict[key] = f.read(i.file_size)
                 elif read_list:
-                    f.readinto(read_list[key].numpy())
+                    tarr = read_list[key].numpy()
+                    tarr_sz = tarr.size * tarr.itemsize
+
+                    f.readinto(tarr)
+                    if i.file_size == tarr_sz:
+                        continue
+
+# XXX: not working yet...
+#                    print("tensor size and file size is mismatching... (%s vs %s) at %s"%(i.file_size, tarr_sz, key))
+                    if read_list[key].dtype == torch.float32 and i.file_size * 2 == tarr_sz:
+#                        print("...assuming half float: ok")
+                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.half)[0:tarr.size]).reshape(read_list[key].shape)
+                        result_dict = "half" # XXX
+                        continue
+                    if read_list[key].dtype == torch.int64 and i.file_size * 4 == tarr_sz: # used in trinart_characters_it4_v1.ckpt
+#                        print("...assuming int16: ok")
+#                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.int16)[0:tarr.size]).reshape(read_list[key].shape)
+                        read_list[key].data = torch.from_numpy(np.frombuffer(tarr, dtype=np.int16)[0:tarr.size]).reshape(read_list[key].shape).long() # XXX: reallocate the buffer...
+                        continue
+                    print("tensor size and file size is mismatching... (%s vs %s) at %s"%(i.file_size, tarr_sz, key))
+
                 else:
                     print("Error: write_to_tensor=True needs read_list")
                     return False

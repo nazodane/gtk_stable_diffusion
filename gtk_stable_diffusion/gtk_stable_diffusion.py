@@ -223,55 +223,67 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 self.processing = False
                 return
 
+            with torch.no_grad():
 # parameters are from https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml
-            scheduler = DPMSolverMultistepScheduler(
-                beta_start=0.00085,
-                beta_end=0.012,
-                beta_schedule="scaled_linear",
-            )
+                scheduler = DPMSolverMultistepScheduler(
+                    beta_start=0.00085,
+                    beta_end=0.012,
+                    beta_schedule="scaled_linear",
+                )
 
-            state_dict = torch.load(repo_id)["state_dict"]
+                state_dict = torch.load(repo_id)["state_dict"]
 
-            unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
-                           'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
-                           'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
-                           'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
+                unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
+                               'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
+                               'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
+                               'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
 
-            unet = diffusers.UNet2DConditionModel(**unet_config)
+                unet = diffusers.UNet2DConditionModel(**unet_config)
 
-            vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
-                          'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
-                          'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
-                          'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
+                vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
+                              'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
+                              'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
+                              'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
 
-            vae = diffusers.AutoencoderKL(**vae_config)
+                vae = diffusers.AutoencoderKL(**vae_config)
 
-            text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+                text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
 
-            ckpt_to_diffusers(state_dict, unet, vae, text_model)
+                ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
-            tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-            safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
-            feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+#                from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+#                from pkl_read import pickle_data_read
+#                r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(unet, vae, text_model), write_to_tensor=True)
+#                if r == "half":
+#                    print("use half version model")
+#                    unet = unet.half()
+#                    vae = vae.half()
+#                    text_model = text_model.half()
 
-            pipe = StableDiffusionLongPromptWeightingPipeline(
-                vae=vae,
-                text_encoder=text_model,
-                tokenizer=tokenizer,
-                unet=unet,
-                scheduler=scheduler,
-                safety_checker=safety_checker,
-                feature_extractor=feature_extractor,
-            )
+                tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+                safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
+                feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+
+                pipe = StableDiffusionLongPromptWeightingPipeline(
+                    vae=vae,
+                    text_encoder=text_model,
+                    tokenizer=tokenizer,
+                    unet=unet,
+                    scheduler=scheduler,
+                    safety_checker=safety_checker,
+                    feature_extractor=feature_extractor,
+                )
+
 #            free_weights(pipe.unet, pipe.vae, pipe.text_encoder)
 #            torch.cuda.empty_cache()
 #            state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
 #            ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
         else:
-            scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
-            pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
-                scheduler=scheduler)
+            with torch.no_grad():
+                scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
+                pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
+                    scheduler=scheduler)
 
         self.safety_checker = pipe.safety_checker
         pipe.safety_checker = None
