@@ -1,1 +1,2 @@
 global-include *gtk_stable_diffusion/*.lang
+global-include *gtk_stable_diffusion/ckpt_base.pt

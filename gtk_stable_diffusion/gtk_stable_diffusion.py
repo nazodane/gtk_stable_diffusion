@@ -197,33 +197,45 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
 
-#        self.pipe = None
-#        self.safety_checker = None
-#        torch.cuda.empty_cache()
+        self.pipe = None
+        torch.cuda.empty_cache()
 
         repo_id = model_dir
         pipe = None
         import time
         time_sta = time.perf_counter()
+        time_mid1 = None
+        time_mid2 = None
 
         if repo_id[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
-            from transformers import AutoFeatureExtractor, BertTokenizerFast, CLIPTextModel, CLIPTokenizer
-            from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
+            from transformers import BertTokenizerFast, CLIPTextModel, CLIPTokenizer
             import diffusers
             from ckpt_to_diffusers import ckpt_to_diffusers
             from free_weights import free_weights
 
-#            if hasattr(self, "pipe") and self.pipe:
-#                free_weights(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
-#                torch.cuda.empty_cache()
-#                state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
-#                ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
-#                time_end = time.perf_counter()
-#                self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
-#                self.processing = False
-#                return
-
             with torch.no_grad():
+#                if hasattr(self, "pipe") and self.pipe:
+
+#                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+#                    from pkl_read import pickle_data_read
+#                    self.pipe = self.pipe
+#                    # r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder), write_to_tensor=True, to_cuda=True)
+#                    state_dict = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder))
+#                    ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
+#                    time_end = time.perf_counter()
+#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+#                    self.processing = False
+#                    return
+
+#                    free_weights(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
+#                    torch.cuda.empty_cache()
+#                    state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+#                    ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
+#                    time_end = time.perf_counter()
+#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+#                    self.processing = False
+#                    return
+
 # parameters are from https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml
                 scheduler = DPMSolverMultistepScheduler(
                     beta_start=0.00085,
@@ -233,31 +245,39 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
 #                state_dict = torch.load(repo_id)["state_dict"]
 
-                unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
-                               'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
-                               'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
-                               'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
+#                unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
+#                               'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
+#                               'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
+#                               'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
 
-                unet = diffusers.UNet2DConditionModel(**unet_config)
+#                unet = diffusers.UNet2DConditionModel(**unet_config)
 
-                vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
-                              'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
-                              'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
-                              'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
+#                vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
+#                              'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
+#                              'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
+#                              'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
 
-                vae = diffusers.AutoencoderKL(**vae_config)
+#                vae = diffusers.AutoencoderKL(**vae_config)
 
-                text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+#                text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+#                free_weights(unet, vae, text_encoder)
 
-#                ckpt_to_diffusers(state_dict, unet, vae, text_model)
+                # the initialization is so slow so we just use compiled one; see ../_gen_ckpt_base.py
+                (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
 
-                from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
-                from pkl_read import pickle_data_read
-                r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(unet, vae, text_model), write_to_tensor=True)
+                state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+
+                ckpt_to_diffusers(state_dict, unet, vae, text_model)
+
+#                from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+#                from pkl_read import pickle_data_read
+#                r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(unet, vae, text_model), write_to_tensor=True)
+
+                time_mid1 = time.perf_counter()
 
                 tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-                safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
-                feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+
+                time_mid2 = time.perf_counter()
 
                 pipe = StableDiffusionLongPromptWeightingPipeline(
                     vae=vae,
@@ -265,8 +285,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     tokenizer=tokenizer,
                     unet=unet,
                     scheduler=scheduler,
-                    safety_checker=safety_checker,
-                    feature_extractor=feature_extractor,
+                    safety_checker=None, # delay nsfw filter init for faster initialization!
+                    feature_extractor=None
                 )
 
 #            free_weights(pipe.unet, pipe.vae, pipe.text_encoder)
@@ -278,10 +298,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             with torch.no_grad():
                 scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
                 pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
-                    scheduler=scheduler)
-
-        self.safety_checker = pipe.safety_checker
-        pipe.safety_checker = None
+                           scheduler=scheduler, safety_checker = None # delay nsfw filter init for faster initialization!
+                       )
 
         pipe = pipe.to("cuda")
 
@@ -296,7 +314,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
         time_end = time.perf_counter()
-        self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+        self.status_update('<big><b>Model Loading (%s): Done (%ss, %ss, %ss)</b></big>'%(model_id, (time_mid1-time_sta), (time_mid2-time_mid1), (time_end-time_mid2)))
         self.processing = False
 
     def process(self):
@@ -328,8 +346,14 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
 # copied and adopted from
 # https://github.com/huggingface/diffusers/blob/2c6bc0f13ba2ba609ac141022b4b56b677d74943/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
+                self.status_update('<big><b>Processing NSFW filter...</b></big>')
+                if not hasattr(self, "safety_checker") or not self.safety_checker:
+                    from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
+                    from transformers import AutoFeatureExtractor
+                    self.safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
+                    self.feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
                 img = self.pipe.numpy_to_pil(img_arr)
-                safety_checker_input = self.pipe.feature_extractor(img, return_tensors="pt").to("cuda")
+                safety_checker_input = self.feature_extractor(img, return_tensors="pt").to("cuda")
                 _, has_nsfw_concept = self.safety_checker(
                     images=img_arr, clip_input=safety_checker_input.pixel_values.to("cpu")
                 )
