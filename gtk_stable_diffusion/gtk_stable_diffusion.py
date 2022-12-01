@@ -257,14 +257,26 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
 
                 state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
-                if model2_path:
+                if model2_path and model2_path[-5:] == ".ckpt":
                     state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
                     for i in state_dict: # on the fly model merging
                         if i.startswith("model.") and i in state_dict2:
                             state_dict[i] = 0.5 * state_dict[i] + 0.5 * state_dict2[i].cuda()
                     del state_dict2
                     torch.cuda.empty_cache()
+                elif model2_path:
+                    pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
+                               scheduler=scheduler, safety_checker = None
+                           )
 
+                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+                    read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
+                    for ckpt in read_list2:
+                        if ckpt.startswith("model.") and ckpt in state_dict:
+                            state_dict[ckpt] = 0.5 * state_dict[ckpt].reshape(read_list2[ckpt].data.shape) + 0.5 * read_list2[ckpt].cuda()
+                    del read_list2
+                    del pipe2
+                    torch.cuda.empty_cache()
 
                 ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
