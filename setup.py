@@ -30,6 +30,11 @@ install_requires = [
 
     "xformers", # for memory efficient attention
 
+## https://pytorch.org/TensorRT/getting_started/installation.html
+#    'nvidia-pyindex',
+#    'nvidia-tensorrt',
+#    'torch-tensorrt',
+
     "libtorrent", # for model weights downloader
     "omegaconf", # for convert_original_stable_diffusion_to_diffusers.py
 
@@ -38,7 +43,7 @@ install_requires = [
 
 setup(
     name = "gtk_stable_diffusion",
-    version = "0.0.6.4",
+    version = "0.0.6.5",
     author = "Toshimitsu Kimura",
     author_email = "lovesyao@gmail.com",
     description = ("A simple GTK UI for Stable Diffusion."),
