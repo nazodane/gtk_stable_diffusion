@@ -37,20 +37,7 @@ class GTKStableDiffusion:
         global np
         import numpy as np
         global Image
-        global ImageFilter
-        from PIL import Image, ImageFilter
-
-        global autocast
-        from torch import autocast
-        global DPMSolverMultistepScheduler
-        from diffusers import DPMSolverMultistepScheduler
-        global torch
-        import torch
-        global StableDiffusionLongPromptWeightingPipeline
-#        try:
-#            from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
-#        except:
-        from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+        from PIL import Image
 
 #        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'garbage_collection_threshold:0.6,max_split_size_mb:50' #128
  
@@ -197,19 +184,28 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
 
+        import time
+        time_pre = time.perf_counter()
+
+        global torch
+        import torch
+
         self.pipe = None
         torch.cuda.empty_cache()
 
         repo_id = model_dir
         pipe = None
-        import time
+
         time_sta = time.perf_counter()
         time_mid1 = None
         time_mid2 = None
 
+        from diffusers import DPMSolverMultistepScheduler
+        from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
+
         if repo_id[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
-            from transformers import BertTokenizerFast, CLIPTextModel, CLIPTokenizer
-            import diffusers
+            from transformers import CLIPTokenizer#, CLIPTextModel
+#            import diffusers
             from ckpt_to_diffusers import ckpt_to_diffusers
             from free_weights import free_weights
 
@@ -242,25 +238,6 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     beta_end=0.012,
                     beta_schedule="scaled_linear",
                 )
-
-#                state_dict = torch.load(repo_id)["state_dict"]
-
-#                unet_config = {'sample_size': 32, 'in_channels': 4, 'out_channels': 4, \
-#                               'down_block_types': ('CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'CrossAttnDownBlock2D', 'DownBlock2D'), \
-#                               'up_block_types': ('UpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D', 'CrossAttnUpBlock2D'), \
-#                               'block_out_channels': (320, 640, 1280, 1280), 'layers_per_block': 2, 'cross_attention_dim': 768, 'attention_head_dim': 8}
-
-#                unet = diffusers.UNet2DConditionModel(**unet_config)
-
-#                vae_config = {'sample_size': 256, 'in_channels': 3, 'out_channels': 3, \
-#                              'down_block_types': ('DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D', 'DownEncoderBlock2D'), \
-#                              'up_block_types': ('UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D', 'UpDecoderBlock2D'), \
-#                              'block_out_channels': (128, 256, 512, 512), 'latent_channels': 4, 'layers_per_block': 2}
-
-#                vae = diffusers.AutoencoderKL(**vae_config)
-
-#                text_model = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
-#                free_weights(unet, vae, text_encoder)
 
                 # the initialization is so slow so we just use compiled one; see ../_gen_ckpt_base.py
                 (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
@@ -297,9 +274,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         else:
             with torch.no_grad():
                 scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
+                time_mid1 = time.perf_counter()
                 pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
                            scheduler=scheduler, safety_checker = None # delay nsfw filter init for faster initialization!
                        )
+                time_mid2 = time.perf_counter()
 
         pipe = pipe.to("cuda")
 
@@ -314,7 +293,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
         time_end = time.perf_counter()
-        self.status_update('<big><b>Model Loading (%s): Done (%ss, %ss, %ss)</b></big>'%(model_id, (time_mid1-time_sta), (time_mid2-time_mid1), (time_end-time_mid2)))
+        self.status_update('<big><b>Model Loading (%s): Done (%.2fs, %.2fs, %.2fs, %.2fs)</b></big>'%(model_id, \
+                           (time_sta-time_pre), (time_mid1-time_sta), (time_mid2-time_mid1), (time_end-time_mid2)))
         self.processing = False
 
     def process(self):
@@ -326,7 +306,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
 #        print("done -6")
-        with autocast("cuda"):
+        with torch.autocast("cuda"):
 #            print("done -5")
             torch.manual_seed(1)
 #            print("done -4")
@@ -409,9 +389,6 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         with torch.no_grad():# , torch.autocast("cuda")
 #            print("done8")
             if not self.traced_fn:
-#                try:
-#                    from .deep_danbooru_model import DeepDanbooruModel
-#                except:
                 from deep_danbooru_model import DeepDanbooruModel
                 global model
 
