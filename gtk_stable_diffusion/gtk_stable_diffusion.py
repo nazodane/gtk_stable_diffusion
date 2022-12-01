@@ -188,12 +188,6 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         if "current_secondary_model" in self.conf and self.conf["current_secondary_model"] in usable_models:
             model2_id = self.conf["current_secondary_model"]
             model2_path = usable_models[model2_id]
-            if model2_path and model2_path[-5:] != ".ckpt":
-                self.status_update('<big><b>Model Loading (%s): Failed (2nd merging model is currently for .ckpt files)</b></big>'%(ms))
-                self.conf["current_secondary_model"] = "None"
-                dump_config(self._parent.conf)
-                self.processing = False
-                return
 
         print("current primary model dir: " + model_path)
 
@@ -314,7 +308,23 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
                     for ckpt in read_list:
                         if ckpt.startswith("model.") and ckpt in state_dict2:
-                            read_list[ckpt].data = 0.5 * read_list[ckpt].data + 0.5 * state_dict2[ckpt].reshape(read_list[ckpt].data.shape).cuda()
+                            read_list[ckpt].data = 0.5 * read_list[ckpt].data + 0.5 * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
+                    del state_dict2
+                    del read_list
+                elif model2_path:
+                    pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
+                               scheduler=scheduler, safety_checker = None
+                           )
+
+                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+                    read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
+                    read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
+                    for ckpt in read_list:
+                        if ckpt.startswith("model."):
+                            read_list[ckpt].data = 0.5 * read_list[ckpt].data + 0.5 * read_list2[ckpt].data
+                    del read_list
+                    del read_list2
+                    del pipe2
 
         pipe = pipe.to("cuda")
 
@@ -339,7 +349,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         neg_prompt_buf = self.neg_prompt_tv.get_buffer()
         neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
 
-        self.status_update('<big><b>Processing... (%s)</b></big>')
+        self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
 #        print("done -6")
         with torch.autocast("cuda"):
