@@ -90,8 +90,11 @@ class GTKStableDiffusion:
         def dump_config(conf):
             f_path = config_file_path
             toml_txt =  f"""
-# current_model is the current stable-diffusion weights for you to use. [default="sd-v1-4"]
+# current_model is the current primary stable-diffusion weights for you to use. [default="sd-v1-4"]
 current_model = "{conf["current_model"] if "current_model" in conf and conf["current_model"] in usable_models else "sd-v1-4"}"
+
+# current_secondary_model is the current secondary stable-diffusion weights (a.k.a. model merging) for you to use. [default="None"]
+current_secondary_model = "{conf["current_secondary_model"] if "current_model" in conf and conf["current_secondary_model"] in usable_models else "None"}"
 
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
@@ -171,18 +174,33 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.process_modelload()
 
     def process_modelload(self):
-        model_dir = None
+        model_path = None
         model_id = ""
+        model2_path = None
+        model2_id = ""
 
         print(usable_models)
 
         if "current_model" in self.conf and self.conf["current_model"] in usable_models:
             model_id = self.conf["current_model"]
-            model_dir = usable_models[model_id]
+            model_path = usable_models[model_id]
 
-        print("current model dir: " + model_dir)
+        if "current_secondary_model" in self.conf and self.conf["current_secondary_model"] in usable_models:
+            model2_id = self.conf["current_secondary_model"]
+            model2_path = usable_models[model2_id]
 
-        self.status_update('<big><b>Model Loading (%s)...</b></big>'%(model_id))
+        print("current primary model dir: " + model_path)
+
+        ms = model_id
+        if model2_path:
+            ms = f"%s and %s"%(model_id, model2_id)
+            if model_path[-5:] != ".ckpt" or model2_path[-5:] != ".ckpt":
+                self.status_update('<big><b>Model Loading (%s): Failed (Model merging is currently for .ckpt files)</b></big>'%(ms))
+                self.processing = False
+                return
+            print("current secondary model dir: " + model2_path)
+
+        self.status_update('<big><b>Model Loading (%s)...</b></big>'%(ms))
 
         import time
         time_pre = time.perf_counter()
@@ -193,7 +211,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.pipe = None
         torch.cuda.empty_cache()
 
-        repo_id = model_dir
+        model_path = model_path
         pipe = None
 
         time_sta = time.perf_counter()
@@ -203,7 +221,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         from diffusers import DPMSolverMultistepScheduler
         from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
-        if repo_id[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
+        if model_path[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
             from transformers import CLIPTokenizer#, CLIPTextModel
 #            import diffusers
             from ckpt_to_diffusers import ckpt_to_diffusers
@@ -215,20 +233,20 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 #                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
 #                    from pkl_read import pickle_data_read
 #                    self.pipe = self.pipe
-#                    # r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder), write_to_tensor=True, to_cuda=True)
-#                    state_dict = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder))
+#                    # r = pickle_data_read(model_path, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder), write_to_tensor=True, to_cuda=True)
+#                    state_dict = pickle_data_read(model_path, ckpt_to_diffusers_read_list(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder))
 #                    ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
 #                    time_end = time.perf_counter()
-#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(ms, (time_end-time_sta)))
 #                    self.processing = False
 #                    return
 
 #                    free_weights(self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
 #                    torch.cuda.empty_cache()
-#                    state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+#                    state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
 #                    ckpt_to_diffusers(state_dict, self.pipe.unet, self.pipe.vae, self.pipe.text_encoder)
 #                    time_end = time.perf_counter()
-#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(model_id, (time_end-time_sta)))
+#                    self.status_update('<big><b>Model Loading (%s): Done (%ss)</b></big>'%(ms, (time_end-time_sta)))
 #                    self.processing = False
 #                    return
 
@@ -242,13 +260,21 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 # the initialization is so slow so we just use compiled one; see ../_gen_ckpt_base.py
                 (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
 
-                state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+                state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
+                if model2_path:
+                    state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
+                    for i in state_dict: # on the fly model merging
+                        if i.startswith("model.") and i in state_dict2:
+                            state_dict[i] = 0.5 * state_dict[i] + 0.5 * state_dict2[i].cuda()
+                    del state_dict2
+                    torch.cuda.empty_cache()
+
 
                 ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
 #                from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
 #                from pkl_read import pickle_data_read
-#                r = pickle_data_read(repo_id, ckpt_to_diffusers_read_list(unet, vae, text_model), write_to_tensor=True)
+#                r = pickle_data_read(model_path, ckpt_to_diffusers_read_list(unet, vae, text_model), write_to_tensor=True)
 
                 time_mid1 = time.perf_counter()
 
@@ -268,14 +294,14 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
 #            free_weights(pipe.unet, pipe.vae, pipe.text_encoder)
 #            torch.cuda.empty_cache()
-#            state_dict = torch.load(repo_id, map_location="cuda:0")["state_dict"]
+#            state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
 #            ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
         else:
             with torch.no_grad():
-                scheduler = DPMSolverMultistepScheduler.from_config(repo_id, subfolder="scheduler")
+                scheduler = DPMSolverMultistepScheduler.from_config(model_path, subfolder="scheduler")
                 time_mid1 = time.perf_counter()
-                pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(repo_id, # revision="fp16",
+                pipe = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model_path, # revision="fp16",
                            scheduler=scheduler, safety_checker = None # delay nsfw filter init for faster initialization!
                        )
                 time_mid2 = time.perf_counter()
@@ -293,7 +319,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
         time_end = time.perf_counter()
-        self.status_update('<big><b>Model Loading (%s): Done (%.2fs, %.2fs, %.2fs, %.2fs)</b></big>'%(model_id, \
+        self.status_update('<big><b>Model Loading (%s): Done (%.2fs, %.2fs, %.2fs, %.2fs)</b></big>'%(ms, \
                            (time_sta-time_pre), (time_mid1-time_sta), (time_mid2-time_mid1), (time_end-time_mid2)))
         self.processing = False
 
@@ -607,6 +633,14 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
+        def on_model2_change(self):
+            model_id = self.get_label()
+            self._parent.conf["current_secondary_model"] = model_id
+            dump_config(self._parent.conf)
+            
+            self._parent.processing = True
+            threading.Thread(target=self._parent.process_modelload).start()
+
         def show_menu(self, event):
             if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3 or not self._parent.delay_inited:
                 return
@@ -625,7 +659,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 menu_count += 1
 
             if len(usable_models) > 1:
-                model_menu = Gtk.MenuItem.new_with_label("Change Current Model")
+                model_menu = Gtk.MenuItem.new_with_label("Current Primary Model")
                 model_menu_child = Gtk.Menu()
                 model_menu.set_submenu(model_menu_child)
                 for m_name in usable_models:
@@ -637,6 +671,29 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     mmenu.show()
                 menu.append(model_menu)
                 model_menu.show()
+                menu_count += 1
+
+            if len(usable_models) > 1:
+                model2_menu = Gtk.MenuItem.new_with_label("Current Secondary Model")
+                model2_menu_child = Gtk.Menu()
+                model2_menu.set_submenu(model2_menu_child)
+
+                m2menu = Gtk.CheckMenuItem.new_with_label("None")
+                m2menu.set_active(True if "current_secondary_model" not in self._parent.conf or self._parent.conf["current_secondary_model"]=="None" else False)
+                m2menu._parent = self._parent
+                m2menu.connect("activate", on_model2_change)
+                model2_menu_child.append(m2menu)
+                m2menu.show()
+
+                for m_name in usable_models:
+                    m2menu = Gtk.CheckMenuItem.new_with_label(m_name)
+                    m2menu.set_active(True if "current_secondary_model" in self._parent.conf and m_name == self._parent.conf["current_secondary_model"] else False)
+                    m2menu._parent = self._parent
+                    m2menu.connect("activate", on_model2_change)
+                    model2_menu_child.append(m2menu)
+                    m2menu.show()
+                menu.append(model2_menu)
+                model2_menu.show()
                 menu_count += 1
 
             if len(self._parent.ls) > 0:
