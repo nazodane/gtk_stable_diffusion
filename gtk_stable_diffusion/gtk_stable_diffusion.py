@@ -408,48 +408,76 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
 #        print("done -6")
+
+        view_pixbuf = None
         with torch.autocast("cuda"):
 #            print("done -5")
-            torch.manual_seed(1)
-#            print("done -4")
-            tensorsa = self.tensorsa
-#            print("done -3")
-            tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
-#            print("done -2")
+            count = self.batch_max if hasattr(self, "batch_max") else 1
+            for n in range(count):
+                torch.manual_seed(n + 1)
 
-            # black magic
-            latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
-                                 tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
-#            print("done -1")
+#                print("done -4")
+                tensorsa = self.tensorsa
+#                print("done -3")
+                tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
+#                print("done -2")
 
-            img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
-#            print("done1")
-            img_arr = img_tensor.cpu().float().numpy()
-            if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
+                # black magic
+                latents = torch.cat((tensorsa[0], tensorsb[1], tensorsa[2], tensorsb[3], tensorsa[4], tensorsb[5], tensorsa[6], tensorsb[7],
+                                     tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
+#                print("done -1")
+
+                img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
+#                print("done1")
+                img_arr = img_tensor.cpu().float().numpy()
+                if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
 # copied and adopted from
 # https://github.com/huggingface/diffusers/blob/2c6bc0f13ba2ba609ac141022b4b56b677d74943/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
-                self.status_update('<big><b>Processing NSFW filter...</b></big>')
-                if not hasattr(self, "safety_checker") or not self.safety_checker:
-                    from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
-                    from transformers import AutoFeatureExtractor
-                    self.safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
-                    self.feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
-                img = self.pipe.numpy_to_pil(img_arr)
-                safety_checker_input = self.feature_extractor(img, return_tensors="pt").to("cuda")
-                _, has_nsfw_concept = self.safety_checker(
-                    images=img_arr, clip_input=safety_checker_input.pixel_values.to("cpu")
-                )
-                if has_nsfw_concept[0]:
-                    print("NSFW")
-                    img[0] = img[0].resize((16, 16), resample=Image.Resampling.BILINEAR)\
-                                   .resize((512, 512), Image.Resampling.NEAREST)
-                    img_arr = np.array(img[0]) / 255.0
-                    img_arr = np.array([img_arr])
-#            print("done2")
-            img_ubarr = (img_arr * 255).round().astype("uint8")
-#            print("done3")
-            pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
-                                                        False, 8, 512, 512, 3*512)
+                    self.status_update('<big><b>Processing NSFW filter...</b></big>')
+                    if not hasattr(self, "safety_checker") or not self.safety_checker:
+                        from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
+                        from transformers import AutoFeatureExtractor
+                        self.safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
+                        self.feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+                    img = self.pipe.numpy_to_pil(img_arr)
+                    safety_checker_input = self.feature_extractor(img, return_tensors="pt").to("cuda")
+                    _, has_nsfw_concept = self.safety_checker(
+                        images=img_arr, clip_input=safety_checker_input.pixel_values.to("cpu")
+                    )
+                    if has_nsfw_concept[0]:
+                        print("NSFW")
+                        img[0] = img[0].resize((16, 16), resample=Image.Resampling.BILINEAR)\
+                                       .resize((512, 512), Image.Resampling.NEAREST)
+                        img_arr = np.array(img[0]) / 255.0
+                        img_arr = np.array([img_arr])
+#                print("done2")
+                img_ubarr = (img_arr * 255).round().astype("uint8")
+#                print("done3")
+                pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
+                                                            False, 8, 512, 512, 3*512)
+
+                if hasattr(self, "batch_max"):
+                    pixbuf.savev("%s.png"%(n), "png")
+                    import math
+                    ml = math.sqrt(self.batch_max)
+                    s = int(512//ml)
+                    item_img = np.array(Image.fromarray(img_ubarr[0]).resize((s, s), Image.Resampling.LANCZOS))
+                    item_pixbuf = GdkPixbuf.Pixbuf.new_from_data(item_img.flatten(), GdkPixbuf.Colorspace.RGB,
+                                                                 False, 8, s, s, 3*s)
+                    if not view_pixbuf:
+                        view_pixbuf = GdkPixbuf.Pixbuf.new_from_data(np.zeros(img_ubarr.flatten().shape, dtype=img_ubarr.flatten().dtype),
+                                                                     GdkPixbuf.Colorspace.RGB, False, 8, 512, 512, 3*512)
+                    item_pixbuf.copy_area(0, 0, s, s, view_pixbuf, s * int(n%ml), s * int(n//ml))
+                    # XXX: textencode should reuse, cancellable, jax integration
+                    # automatic prompt saving, output format (metadata in the image)
+                    self.image.set_from_pixbuf(view_pixbuf)
+
+            if hasattr(self, "batch_max"):
+                self.status_update('<big><b>Processing: Done.</b></big>')
+                del self.batch_max
+                self.processing = False
+                return
+
 #            print("done4")
             self.image.set_from_pixbuf(pixbuf)
 #            print("done5")
@@ -724,6 +752,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
+        def on_bg(self):
+            self._parent.processing = True
+            self._parent.batch_max = self._count
+            threading.Thread(target=self._parent.process).start()
+
         def show_menu(self, event):
             if event.type != Gdk.EventType.BUTTON_PRESS or event.button != 3 or not self._parent.delay_inited:
                 return
@@ -741,7 +774,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 nsfwf_menu.show()
                 menu_count += 1
 
-            if len(usable_models) > 1:
+            if len(usable_models) > 1: # TODO: and not self._parent.processing
                 model_menu = Gtk.MenuItem.new_with_label("Current Primary Model")
                 model_menu_child = Gtk.Menu()
                 model_menu.set_submenu(model_menu_child)
@@ -756,7 +789,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 model_menu.show()
                 menu_count += 1
 
-            if len(usable_models) > 1:
+            if len(usable_models) > 1: # TODO: and not self._parent.processing
                 model2_menu = Gtk.MenuItem.new_with_label("Current Secondary Model")
                 model2_menu_child = Gtk.Menu()
                 model2_menu.set_submenu(model2_menu_child)
@@ -793,6 +826,21 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     m2menu.show()                    
                 menu.append(model2_menu)
                 model2_menu.show()
+                menu_count += 1
+
+            if not self._parent.processing:
+                batch_menu = Gtk.MenuItem.new_with_label("Batch Generate")
+                batch_menu_child = Gtk.Menu()
+                batch_menu.set_submenu(batch_menu_child)
+                for batch_count in [4, 16, 64, 256]:
+                    bgmenu = Gtk.MenuItem.new_with_label("%s"%(batch_count))
+                    bgmenu._count = batch_count
+                    bgmenu._parent = self._parent
+                    bgmenu.connect("activate", on_bg)
+                    batch_menu_child.append(bgmenu)
+                    bgmenu.show()
+                menu.append(batch_menu)
+                batch_menu.show()
                 menu_count += 1
 
             if len(self._parent.ls) > 0:
