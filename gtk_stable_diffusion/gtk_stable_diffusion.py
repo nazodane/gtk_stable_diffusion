@@ -777,9 +777,13 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         def on_model_change(self):
             model_id = self.get_label()
+
+            if model_id in self._parent.conf["current_secondary_model"]:
+                del self._parent.conf["current_secondary_model"][model_id]
+                secondary_model_init(self._parent)
+
             self._parent.conf["current_model"] = model_id
             dump_config(self._parent.conf)
-            
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
@@ -846,6 +850,8 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 #                m2menu.connect("activate", on_model2_change)
 
                 for m_name in usable_models:
+                    if "current_model" in self._parent.conf and m_name == self._parent.conf["current_model"]:
+                        continue
                     m2menu = Gtk.CheckMenuItem.new_with_label(m_name)
                     m2menu_child = Gtk.Menu()
                     m2menu.set_submenu(m2menu_child)
