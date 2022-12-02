@@ -111,7 +111,13 @@ nsfw_filter = {"false" if "nsfw_filter" in conf and not conf["nsfw_filter"] else
 
 # show_nsfw_filter_toggle is for you who don't want to change the nsfw toggle. [default=true]
 show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not conf["show_nsfw_filter_toggle"] else "true"}
-"""
+
+# last_prompt is the last prompt that you use to generate. [default=""]
+last_prompt = """ + '"""' + (conf["last_prompt"] if "last_prompt" in conf else "") + '"""'+ """
+
+# last_neg_prompt is the last negative prompt that you use to generate. [default=""]
+last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in conf else "") + '"""'+ """
+""" # XXX: escapes are lacking...
 
             if os.path.exists(f_path):
                 shutil.copy(config_file_path, config_file_path + ".bak") # save backup config
@@ -219,6 +225,12 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 #                 print(fname)
             return fname
 
+        print(self.conf["last_prompt"])
+        prompt_buf = self.prompt_tv.get_buffer()
+        prompt_buf.set_text(self.conf["last_prompt"])
+        print(self.conf["last_neg_prompt"])
+        neg_prompt_buf = self.neg_prompt_tv.get_buffer()
+        neg_prompt_buf.set_text(self.conf["last_neg_prompt"])
 
         self.processing = True
         self.delay_inited = True
@@ -432,6 +444,9 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         prompt = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
         neg_prompt_buf = self.neg_prompt_tv.get_buffer()
         neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
+        self.conf["last_prompt"] = prompt
+        self.conf["last_neg_prompt"] = neg_prompt
+        dump_config(self.conf)
 
         self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
