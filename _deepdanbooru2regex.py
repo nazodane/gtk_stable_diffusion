@@ -152,7 +152,7 @@ print "\\n";
         txt = f.read()
 
     print('<context id="tags%s" style-ref="tags%s">'%(idx+1,idx+1))
-    print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?=_|-|\\:| |$)</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
+    print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?=_|-|\\:| |,|$)</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
 #    print("<match>(^| |_|-|\\:|\\[|\\(|_\\\\\\()%s\\\\?(\\)|\\]|ing|er|ed|on)?</match>"%(txt.replace("[/@_]", "[\\/@_]").replace("(?^:", "(?:").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\n","")))
     print('</context>')
 
