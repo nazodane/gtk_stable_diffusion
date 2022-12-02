@@ -195,6 +195,31 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 secondary_used += int(p[0:-1])
         secondary_model_init(self)
 
+
+        global save_prefix
+        def save_prefix(self, prompt, postfix):
+            import subprocess
+            try:
+                _ddir = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True).stdout.strip("\n")
+            except FileNotFoundError:
+                _ddir = home
+            _ddir += "/gtk_stable_diffusion"
+
+            if not os.path.exists(_ddir):
+                os.makedirs(_ddir, exist_ok=True)
+
+            prompt = prompt.replace("/", "_")
+            fname_prefix = _ddir + "/" + " ".join(prompt.split(" ")[0:5]) + ("..." if len(prompt.split(" ")) > 5 else "") + "_"
+            i = 0
+            fname = fname_prefix + "0"
+#            print(fname)
+            while os.path.exists(fname + postfix): # postfix is something like ".png"
+                 i += 1
+                 fname = fname_prefix + str(i)
+#                 print(fname)
+            return fname
+
+
         self.processing = True
         self.delay_inited = True
         self.process_modelload()
@@ -413,6 +438,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 #        print("done -6")
 
         view_pixbuf = None
+        fname = ""
         with torch.autocast("cuda"):
 #            print("done -5")
             count = self.batch_max if hasattr(self, "batch_max") else 1
@@ -460,7 +486,16 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                                                             False, 8, 512, 512, 3*512)
 
                 if hasattr(self, "batch_max"):
-                    pixbuf.savev("%s.png"%(n), "png")
+                    if not view_pixbuf:
+                        fname = save_prefix(self, prompt, "/")
+                        print(fname)
+                        if not os.path.exists(fname):
+                            os.makedirs(fname, exist_ok=True)
+                        open(fname + "/prompt.txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s'%(\
+                                                        prompt, neg_prompt, self.conf["current_model"], \
+                                                        secondary_model_to_string(self.conf["current_secondary_model"]))) # actually toml
+                    pixbuf.savev(fname + "/%s.png"%(n), "png")
+
                     import math
                     ml = math.sqrt(self.batch_max)
                     s = int(512//ml)
@@ -476,7 +511,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                     self.image.set_from_pixbuf(view_pixbuf)
 
             if hasattr(self, "batch_max"):
-                self.status_update('<big><b>Processing: Done.</b></big>')
+                self.status_update('<big><b>Processing: Batching: Done. (on %s)</b></big>'%os.path.dirname(fname))
                 del self.batch_max
                 self.processing = False
                 return
@@ -730,31 +765,15 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         def on_save(self):
             self._parent.debug_label.set_markup('<big><b>Saving...</b></big>')
-            import subprocess
-            try:
-                _ddir = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True).stdout.strip("\n")
-            except FileNotFoundError:
-                _ddir = home
-            _ddir += "/gtk_stable_diffusion"
-
-            if not os.path.exists(_ddir):
-                os.makedirs(_ddir, exist_ok=True)
 
             prompt = self._parent.image_prompt
-            fname_prefix = _ddir + "/" + " ".join(prompt.split(" ")[0:5]) + ("..." if len(prompt.split(" ")) > 5 else "") + "_"
-            i = 0
-            fname = fname_prefix + "0"
-#            print(fname)
-            while os.path.exists(fname + ".png"):
-                 i += 1
-                 fname = fname_prefix + str(i)
-#                 print(fname)
+            fname = save_prefix(self._parent, prompt, ".png")
 
             open(fname + ".txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s'%(\
                                             prompt, self._parent.image_neg_prompt, \
-                                            self._parent.image_primary_model, self._parent.image_secondary_model))
+                                            self._parent.image_primary_model, self._parent.image_secondary_model)) # actually toml
             self._parent.image.get_pixbuf().savev(fname + ".png", "png") # XXX: we should save on metadata?
-            self._parent.debug_label.set_markup('<big><b>Saving: Done. (%s)</b></big>'%(_ddir))
+            self._parent.debug_label.set_markup('<big><b>Saving: Done. (on %s)</b></big>'%(os.path.dirname(fname)))
 
         def on_model_change(self):
             model_id = self.get_label()
