@@ -89,12 +89,18 @@ class GTKStableDiffusion:
         global dump_config
         def dump_config(conf):
             f_path = config_file_path
+            _current_secondary_model = conf["current_secondary_model"] if "current_model" in conf and hasattr(conf["current_secondary_model"], "keys") else \
+                                       {conf["current_secondary_model"]: "50%"} if "current_model" in conf and type(conf["current_secondary_model"]) == str else\
+                                       {}
+            _current_secondary_model_str = "{" + (", ".join([ f'"%s" = "%s"'%(x,y) for x,y in _current_secondary_model.items()])) + "}"
+            print(_current_secondary_model_str)
+            
             toml_txt =  f"""
 # current_model is the current primary stable-diffusion weights for you to use. [default="sd-v1-4"]
 current_model = "{conf["current_model"] if "current_model" in conf and conf["current_model"] in usable_models else "sd-v1-4"}"
 
-# current_secondary_model is the current secondary stable-diffusion weights (a.k.a. model merging) for you to use. [default="None"]
-current_secondary_model = "{conf["current_secondary_model"] if "current_model" in conf and conf["current_secondary_model"] in usable_models else "None"}"
+# current_secondary_model is the current secondary stable-diffusion weights and percentages (a.k.a. model merging) for you to use. [default=""" + "{}" + f"""]
+current_secondary_model = {_current_secondary_model_str}
 
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
@@ -112,6 +118,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         if not os.path.exists(config_file_path):
             os.makedirs(config_dir, exist_ok=True)
             dump_config({}) # initialize config
+
 
         import toml
         try:
@@ -169,6 +176,22 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
             usable_models["sd-v1-4"] = model_dir
 
+        global secondary_model_init
+        def secondary_model_init(self):
+            if "current_secondary_model" not in self.conf:
+                if type(self.conf["current_secondary_model"]) == str:
+                    self.conf["current_secondary_model"] = {self.conf["current_secondary_model"]: "50%"}
+                if not hasattr(self.conf["current_secondary_model"], "keys"):
+                    self.conf["current_secondary_model"] = {}
+            global secondary_used
+            secondary_used = 0
+            for i, p in list(self.conf["current_secondary_model"].items()):
+                if i not in usable_models:
+                    del self.conf["current_secondary_model"][i]
+                    continue
+                secondary_used += int(p[0:-1])
+        secondary_model_init(self)
+
         self.processing = True
         self.delay_inited = True
         self.process_modelload()
@@ -184,17 +207,23 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
         if "current_model" in self.conf and self.conf["current_model"] in usable_models:
             model_id = self.conf["current_model"]
             model_path = usable_models[model_id]
+            model_percentage = (100-secondary_used)/100.0
 
-        if "current_secondary_model" in self.conf and self.conf["current_secondary_model"] in usable_models:
-            model2_id = self.conf["current_secondary_model"]
-            model2_path = usable_models[model2_id]
+        model2_ids = self.conf["current_secondary_model"].keys()
+        model2_paths = [usable_models[model2_id] for model2_id in model2_ids]
+        model2_percentages = [int(v[0:-1])/100.0 for v in self.conf["current_secondary_model"].values()]
+        print(model2_ids)
+        print(model2_paths)
+        print(model2_percentages)
 
-        print("current primary model dir: " + model_path)
+        print("current primary model path: " + model_path)
 
         ms = model_id
-        if model2_path:
-            ms = f"%s and %s"%(model_id, model2_id)
-            print("current secondary model dir: " + model2_path)
+        if len(model2_paths):
+            print("current secondary model path: %s"%(model2_paths))
+            ms = f"%s %s%%"%(model_id, 100-secondary_used)
+            for k, v in self.conf["current_secondary_model"].items():
+                ms += " / %s %s"%(k, v)
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(ms))
 
@@ -257,26 +286,34 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
 
                 state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
-                if model2_path and model2_path[-5:] == ".ckpt":
-                    state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
-                    for i in state_dict: # on the fly model merging
-                        if i.startswith("model.") and i in state_dict2:
-                            state_dict[i] = 0.5 * state_dict[i] + 0.5 * state_dict2[i].cuda()
-                    del state_dict2
-                    torch.cuda.empty_cache()
-                elif model2_path:
-                    pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
+
+                for k, model2_path in enumerate(model2_paths):
+                    if model2_path and model2_path[-5:] == ".ckpt":
+                        state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
+                        for i in state_dict: # on the fly model merging
+                            if i.startswith("model.") and i in state_dict2:
+                                if k == 0:
+                                    state_dict[i] = model_percentage * state_dict[i] + model2_percentages[k] * state_dict2[i].cuda()
+                                else:
+                                    state_dict[i] += model2_percentages[k] * state_dict2[i].cuda()
+                        del state_dict2
+                        torch.cuda.empty_cache()
+                    elif model2_path:
+                        pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
                                scheduler=scheduler, safety_checker = None
                            )
 
-                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
-                    read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
-                    for ckpt in read_list2:
-                        if ckpt.startswith("model.") and ckpt in state_dict:
-                            state_dict[ckpt] = 0.5 * state_dict[ckpt].reshape(read_list2[ckpt].data.shape) + 0.5 * read_list2[ckpt].cuda()
-                    del read_list2
-                    del pipe2
-                    torch.cuda.empty_cache()
+                        from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+                        read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
+                        for ckpt in read_list2:
+                            if ckpt.startswith("model.") and ckpt in state_dict:
+                                if k == 0:
+                                    state_dict[ckpt] = model_percentage * state_dict[ckpt].reshape(read_list2[ckpt].data.shape) + model2_percentages[k] * read_list2[ckpt].cuda()
+                                else:
+                                    state_dict[ckpt] += model2_percentages[k] * read_list2[ckpt].cuda()
+                        del read_list2
+                        del pipe2
+                        torch.cuda.empty_cache()
 
                 ckpt_to_diffusers(state_dict, unet, vae, text_model)
 
@@ -314,29 +351,36 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                        )
                 time_mid2 = time.perf_counter()
 
-                if model2_path and model2_path[-5:] == ".ckpt":
-                    state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
-                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
-                    read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
-                    for ckpt in read_list:
-                        if ckpt.startswith("model.") and ckpt in state_dict2:
-                            read_list[ckpt].data = 0.5 * read_list[ckpt].data + 0.5 * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
-                    del state_dict2
-                    del read_list
-                elif model2_path:
-                    pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
-                               scheduler=scheduler, safety_checker = None
-                           )
+                for k, model2_path in enumerate(model2_paths):
+                    if model2_path and model2_path[-5:] == ".ckpt":
+                        state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
+                        from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+                        read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
+                        for ckpt in read_list:
+                            if ckpt.startswith("model.") and ckpt in state_dict2:
+                                if k == 0:
+                                    read_list[ckpt].data = model_percentage * read_list[ckpt].data + model2_percentages[k] * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
+                                else:
+                                    read_list[ckpt].data += model2_percentages[k] * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
+                        del state_dict2
+                        del read_list
+                    elif model2_path:
+                        pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
+                                   scheduler=scheduler, safety_checker = None
+                               )
 
-                    from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
-                    read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
-                    read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
-                    for ckpt in read_list:
-                        if ckpt.startswith("model."):
-                            read_list[ckpt].data = 0.5 * read_list[ckpt].data + 0.5 * read_list2[ckpt].data
-                    del read_list
-                    del read_list2
-                    del pipe2
+                        from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
+                        read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
+                        read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
+                        for ckpt in read_list:
+                            if ckpt.startswith("model."):
+                                if k == 0:
+                                    read_list[ckpt].data = model_percentage * read_list[ckpt].data + model2_percentages[k] * read_list2[ckpt].data
+                                else:
+                                    read_list[ckpt].data += model2_percentages[k] * read_list2[ckpt].data
+                        del read_list
+                        del read_list2
+                        del pipe2
 
         pipe = pipe.to("cuda")
 
@@ -666,8 +710,15 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
             threading.Thread(target=self._parent.process_modelload).start()
 
         def on_model2_change(self):
-            model_id = self.get_label()
-            self._parent.conf["current_secondary_model"] = model_id
+            model_id = self._model_id
+            percentage = self.get_label()
+
+            if percentage == "None":
+                if model_id in self._parent.conf["current_secondary_model"]:
+                    del self._parent.conf["current_secondary_model"][model_id]
+            else:
+                self._parent.conf["current_secondary_model"][model_id] = percentage
+            secondary_model_init(self._parent)
             dump_config(self._parent.conf)
             
             self._parent.processing = True
@@ -713,17 +764,33 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                 m2menu = Gtk.CheckMenuItem.new_with_label("None")
                 m2menu.set_active(True if "current_secondary_model" not in self._parent.conf or self._parent.conf["current_secondary_model"]=="None" else False)
                 m2menu._parent = self._parent
-                m2menu.connect("activate", on_model2_change)
-                model2_menu_child.append(m2menu)
-                m2menu.show()
+#                m2menu.connect("activate", on_model2_change)
 
                 for m_name in usable_models:
                     m2menu = Gtk.CheckMenuItem.new_with_label(m_name)
-                    m2menu.set_active(True if "current_secondary_model" in self._parent.conf and m_name == self._parent.conf["current_secondary_model"] else False)
+                    m2menu_child = Gtk.Menu()
+                    m2menu.set_submenu(m2menu_child)
+                    m2menu.set_active(True if "current_secondary_model" in self._parent.conf and m_name in self._parent.conf["current_secondary_model"] else False)
                     m2menu._parent = self._parent
-                    m2menu.connect("activate", on_model2_change)
+                    m2menu.connect("select", lambda self: \
+                        self.set_active(False if "current_secondary_model" in self._parent.conf and\
+                            self.get_label() in self._parent.conf["current_secondary_model"] else True)) # XXX: for prevent bugs on select
+#                    m2menu.connect("activate", on_model2_change)
+
+
+                    val = int(self._parent.conf["current_secondary_model"][m_name][0:-1]) if m_name in self._parent.conf["current_secondary_model"] else 0
+                    for p in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]:
+                        if (p >= 100 - secondary_used + val): # don't over 100%
+                            break
+                        pmenu = Gtk.CheckMenuItem.new_with_label(str(p) + "%" if p else "None")
+                        pmenu.set_active(True if p == val else False)
+                        pmenu._model_id = m_name
+                        pmenu._parent = self._parent
+                        pmenu.connect("activate", on_model2_change)
+                        m2menu_child.append(pmenu)
+                        pmenu.show()
                     model2_menu_child.append(m2menu)
-                    m2menu.show()
+                    m2menu.show()                    
                 menu.append(model2_menu)
                 model2_menu.show()
                 menu_count += 1
