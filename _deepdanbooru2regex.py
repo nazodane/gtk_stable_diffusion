@@ -157,7 +157,7 @@ print "\\n";
     print('</context>')
 
 print('<context id="tags2" style-ref="tags2">')
-print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?=_|-|\\:| |$)</match>"%(is_romaji))
+print("<match>(?:^| |_|-|\\:|\\[|\\(|_\\\\\\()%s(?:\\\\?)(?:\\)|\\])?(?=_|-|\\:| |,|$)</match>"%(is_romaji))
 print('</context>')
 
 print(footer)
