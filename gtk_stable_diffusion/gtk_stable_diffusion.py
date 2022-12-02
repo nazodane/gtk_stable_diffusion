@@ -82,6 +82,9 @@ class GTKStableDiffusion:
                     continue
                 usable_models[d] = repo_path
 
+        global secondary_model_to_string
+        def secondary_model_to_string(model_dict):
+            return "{" + (", ".join([ f'"%s" = "%s"'%(x,y) for x,y in model_dict.items()])) + "}"
 
 # Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
 # Although we just implement toml dump as text dump because
@@ -92,7 +95,7 @@ class GTKStableDiffusion:
             _current_secondary_model = conf["current_secondary_model"] if "current_model" in conf and hasattr(conf["current_secondary_model"], "keys") else \
                                        {conf["current_secondary_model"]: "50%"} if "current_model" in conf and type(conf["current_secondary_model"]) == str else\
                                        {}
-            _current_secondary_model_str = "{" + (", ".join([ f'"%s" = "%s"'%(x,y) for x,y in _current_secondary_model.items()])) + "}"
+            _current_secondary_model_str = secondary_model_to_string(_current_secondary_model)
             print(_current_secondary_model_str)
             
             toml_txt =  f"""
@@ -480,6 +483,11 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
 #            print("done4")
             self.image.set_from_pixbuf(pixbuf)
+            self.image_prompt = prompt
+            self.image_neg_prompt = neg_prompt
+            self.image_primary_model = self.conf["current_model"]
+            self.image_secondary_model = secondary_model_to_string(self.conf["current_secondary_model"])
+
 #            print("done5")
 
             self.inspect_process(img_tensor)
@@ -499,7 +507,7 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
                                                         False, 8, 64, 64, 3*64)
 
 #            print("done19")
-            self.ls.append([pixbuf_prev, prompt, neg_prompt])
+            self.ls.append([pixbuf_prev, prompt, neg_prompt]) # XXX: should save model data...
 #            print("done20")
 
 #        print("done21")
@@ -722,12 +730,31 @@ show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not 
 
         def on_save(self):
             self._parent.debug_label.set_markup('<big><b>Saving...</b></big>')
-            prompt_buf = self._parent.prompt_tv.get_buffer()
-            prompt = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
-            neg_prompt_buf = self._parent.neg_prompt_tv.get_buffer()
-            neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
-            self._parent.image.get_pixbuf().savev("%s||||%s.png"%(prompt,neg_prompt), "png") # XXX: more better naming rule?
-            self._parent.debug_label.set_markup('<big><b>Saving: Done.</b></big>')
+            import subprocess
+            try:
+                _ddir = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True).stdout.strip("\n")
+            except FileNotFoundError:
+                _ddir = home
+            _ddir += "/gtk_stable_diffusion"
+
+            if not os.path.exists(_ddir):
+                os.makedirs(_ddir, exist_ok=True)
+
+            prompt = self._parent.image_prompt
+            fname_prefix = _ddir + "/" + " ".join(prompt.split(" ")[0:5]) + ("..." if len(prompt.split(" ")) > 5 else "") + "_"
+            i = 0
+            fname = fname_prefix + "0"
+#            print(fname)
+            while os.path.exists(fname + ".png"):
+                 i += 1
+                 fname = fname_prefix + str(i)
+#                 print(fname)
+
+            open(fname + ".txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s'%(\
+                                            prompt, self._parent.image_neg_prompt, \
+                                            self._parent.image_primary_model, self._parent.image_secondary_model))
+            self._parent.image.get_pixbuf().savev(fname + ".png", "png") # XXX: we should save on metadata?
+            self._parent.debug_label.set_markup('<big><b>Saving: Done. (%s)</b></big>'%(_ddir))
 
         def on_model_change(self):
             model_id = self.get_label()
