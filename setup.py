@@ -39,12 +39,12 @@ install_requires = [
     "omegaconf", # for convert_original_stable_diffusion_to_diffusers.py
 
     "toml",
-    "nltk", # for showing candidates of synonym and antonym
+    "nltk", # for showing candidates of synonyms and antonyms
 ]
 
 setup(
     name = "gtk_stable_diffusion",
-    version = "0.0.7.1",
+    version = "0.0.8",
     author = "Toshimitsu Kimura",
     author_email = "lovesyao@gmail.com",
     description = ("A simple GTK UI for Stable Diffusion."),
