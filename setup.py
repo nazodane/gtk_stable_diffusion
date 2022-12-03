@@ -39,6 +39,7 @@ install_requires = [
     "omegaconf", # for convert_original_stable_diffusion_to_diffusers.py
 
     "toml",
+    "nltk", # for showing candidates of synonym and antonym
 ]
 
 setup(

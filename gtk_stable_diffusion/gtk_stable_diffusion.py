@@ -737,7 +737,49 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
         lm = GtkSource.LanguageManager()
         lm.set_search_path(lm.get_search_path()+[os.path.dirname(__file__)])
 
-        def new_prompt_textview(self, lm):
+        def tv_completion(self):
+            menu = Gtk.Menu()
+            if not hasattr(self, "nltk_inited"):
+                import nltk
+                global wordnet
+                from nltk.corpus import wordnet
+                if not nltk.find("corpora/wordnet.zip"):
+                    nltk.download('wordnet')
+                if not nltk.find("corpora/omw-1.4.zip"):
+                    nltk.download('omw-1.4')
+                self.nltk_inited = True
+            import itertools
+            target_words = ""
+            prompt_buf = self._parent.prompt_tv.get_buffer()
+            target_words = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
+
+            import regex as re
+            target_words = re.sub(r"""["'()+-_/\\|]""", " ", target_words)
+            print(target_words)
+            print(target_words.split(" "))
+
+            candidates = []
+            if self._id == "prompt":
+                candidates =  [[x.lemma_names() for x in  wordnet.synsets(w)] for w in target_words.split(" ")]
+            elif self._id == "neg_prompt":
+                candidates = [[[[k.name() for k in i.antonyms()] for i in x.lemmas()] for x in  wordnet.synsets(w)] for w in target_words.split(" ")]
+
+            def flatten_and_uniq_str(arr):
+                return {i for t in [[i] if isinstance(i, str) else flatten_and_uniq_str(i) for i in arr] for i in t}
+
+            def on_prompt_add(self):
+                self._tv.get_buffer().insert_at_cursor(self.get_label())
+
+            candidates = flatten_and_uniq_str(candidates)
+            for candidate in candidates:
+                cd_menu = Gtk.MenuItem.new_with_label(candidate)
+                cd_menu._tv = self
+                menu.append(cd_menu)
+                cd_menu.connect("activate", on_prompt_add)
+                cd_menu.show()
+            menu.popup(None, None, None, None, 0, Gtk.get_current_event_time())
+
+        def new_prompt_textview(self, lm, _id):
             buf = GtkSource.Buffer()
 #            print(lm.get_language_ids())
             buf.set_language(lm.get_language("sd_prompt"))
@@ -753,10 +795,12 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
             tv.set_size_request(-1, fontsize * 5) # show 5 lines
             tv.connect('key-press-event', tv_kpef)
+            tv.connect('show-completion', tv_completion)
             tv._parent = self
+            tv._id = _id
             return tv
-        self.prompt_tv = new_prompt_textview(self, lm)
-        self.neg_prompt_tv = new_prompt_textview(self, lm)
+        self.prompt_tv = new_prompt_textview(self, lm, "prompt")
+        self.neg_prompt_tv = new_prompt_textview(self, lm, "neg_prompt")
 
         self.debug_label = Gtk.Label()
         self.debug_label.set_markup('<big><b>Initializing...</b></big>')
