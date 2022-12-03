@@ -762,10 +762,6 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 synsets = wordnet.synsets(prompt)
                 if not synsets:
                     continue
-                p_menu = Gtk.MenuItem.new_with_label(prompt)
-                p_menu._tv = self
-                p_menu_child = Gtk.Menu()
-                p_menu.set_submenu(p_menu_child)
 
                 candidates = []
                 if self._id == "prompt":
@@ -775,11 +771,19 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
                 def flatten_and_uniq_str(arr):
                     return {i for t in [[i] if isinstance(i, str) else flatten_and_uniq_str(i) for i in arr] for i in t}
+                candidates = flatten_and_uniq_str(candidates)
+                if not candidates:
+                    continue
+#                print(candidates)
+
+                p_menu = Gtk.MenuItem.new_with_label(prompt)
+                p_menu._tv = self
+                p_menu_child = Gtk.Menu()
+                p_menu.set_submenu(p_menu_child)
 
                 def on_prompt_add(self):
                     self._tv.get_buffer().insert_at_cursor(self.get_label())
 
-                candidates = flatten_and_uniq_str(candidates)
                 for candidate in candidates:
                     cd_menu = Gtk.MenuItem.new_with_label(candidate)
                     cd_menu._tv = self
