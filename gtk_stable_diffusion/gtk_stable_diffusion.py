@@ -105,7 +105,7 @@ current_model = "{conf["current_model"] if "current_model" in conf and conf["cur
 # current_secondary_model is the current secondary stable-diffusion weights and percentages (a.k.a. model merging) for you to use. [default=""" + "{}" + f"""]
 current_secondary_model = {_current_secondary_model_str}
 
-# model_merging_method ("Weighted Add" or "Stochastic") is the method using for merging the primary and the secondary models [default="Weighted Add"]
+# model_merging_method ("Weighted Add" or "Probability") is the method using for merging the primary and the secondary models [default="Weighted Add"]
 model_merging_method = "{conf.get("model_merging_method") or "Weighted Add"}"
 
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
@@ -267,7 +267,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             print("current secondary model path: %s"%(model2_paths))
             ms = f"%s %s%%"%(model_id, 100-secondary_used)
             for k, v in self.conf["current_secondary_model"].items():
-                if self.conf.get("model_merging_method") == "Stochastic":
+                if self.conf.get("model_merging_method") == "Probability":
                     ms += " | "
                 else:
                     ms += " + "
@@ -299,7 +299,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 sec_tensor = sec_tensor.cuda()
             sec_tensor = sec_tensor.reshape(prim_tensor.shape)
 
-            if method == "Stochastic": # XXX: this stochastics is wrong for three or more merging
+            if method == "Probability": # XXX: this probability is wrong for three or more merging
                 mask = torch.FloatTensor().new_empty(prim_tensor.shape).uniform_() < sec_weight
                 prim_tensor.data[mask] = sec_tensor[mask]
                 return
@@ -1001,7 +1001,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 mm_menu = Gtk.MenuItem.new_with_label("Merging Method")
                 mm_menu_child = Gtk.Menu()
                 mm_menu.set_submenu(mm_menu_child)
-                for mm_str in ["Weighted Add", "Stochastic"]:
+                for mm_str in ["Weighted Add", "Probability"]:
                     mmi_menu = Gtk.CheckMenuItem.new_with_label("%s"%(mm_str))
                     mmi_menu.set_active(True if (self._parent.conf.get("model_merging_method") or "Weighted Add") == mm_str else False)
                     mmi_menu._parent = self._parent
