@@ -286,6 +286,16 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
         from diffusers import DPMSolverMultistepScheduler
         from lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 
+        def model_merge(prim_tensor, prim_weight, sec_tensor, sec_weight, method, k):
+            if prim_tensor.is_cuda:
+                sec_tensor = sec_tensor.cuda()
+            sec_tensor = sec_tensor.reshape(prim_tensor.shape)
+
+            if k == 0:
+                prim_tensor.data = prim_weight * prim_tensor + sec_weight * sec_tensor
+            else:
+                prim_tensor.data += sec_weight * sec_tensor
+
         if model_path[-5:] == ".ckpt": # original sd model -- sd-v1-5-inpainting is not supoprted yet
             from transformers import CLIPTokenizer#, CLIPTextModel
 #            import diffusers
@@ -330,29 +340,33 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
                 for k, model2_path in enumerate(model2_paths):
                     if model2_path and model2_path[-5:] == ".ckpt":
+                        print("ckpt-ckpt merge")
+                        torch.manual_seed(0)
                         state_dict2 = torch.load(model2_path, map_location="cpu")
                         state_dict2 = state_dict2.get("state_dict") or state_dict2
                         for i in state_dict: # on the fly model merging
-                            if i.startswith("model.") and i in state_dict2:
-                                if k == 0:
-                                    state_dict[i] = model_percentage * state_dict[i] + model2_percentages[k] * state_dict2[i].cuda()
-                                else:
-                                    state_dict[i] += model2_percentages[k] * state_dict2[i].cuda()
+                            if i.startswith("model."):
+                                prim = state_dict.get(i)
+                                prim = prim if prim != None else state_dict.get(i.replace(".text_model", ""))
+                                sec = state_dict2.get(i)
+                                sec = sec if sec != None else state_dict2.get(i.replace(".text_model", ""))
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
                         del state_dict2
                         torch.cuda.empty_cache()
                     elif model2_path:
                         pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
                                scheduler=scheduler, safety_checker = None
                            )
-
                         from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
                         read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
+                        print("ckpt-diffusers merge")
+                        torch.manual_seed(0)
                         for ckpt in read_list2:
-                            if ckpt.startswith("model.") and ckpt in state_dict:
-                                if k == 0:
-                                    state_dict[ckpt] = model_percentage * state_dict[ckpt].reshape(read_list2[ckpt].data.shape) + model2_percentages[k] * read_list2[ckpt].cuda()
-                                else:
-                                    state_dict[ckpt] += model2_percentages[k] * read_list2[ckpt].cuda()
+                            if ckpt.startswith("model."):
+                                prim = state_dict.get(ckpt)
+                                prim = prim if prim != None else state_dict.get(ckpt.replace(".text_model", ""))
+                                sec = read_list2[ckpt]
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
                         del read_list2
                         del pipe2
                         torch.cuda.empty_cache()
@@ -395,32 +409,34 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
                 for k, model2_path in enumerate(model2_paths):
                     if model2_path and model2_path[-5:] == ".ckpt":
+                        print("diffusers-ckpt merge")
+                        torch.manual_seed(0)
                         state_dict2 = torch.load(model2_path, map_location="cpu")
                         state_dict2 = state_dict2.get("state_dict") or state_dict2
                         from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
                         read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
                         for ckpt in read_list:
                             if ckpt.startswith("model.") and ckpt in state_dict2:
-                                if k == 0:
-                                    read_list[ckpt].data = model_percentage * read_list[ckpt].data + model2_percentages[k] * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
-                                else:
-                                    read_list[ckpt].data += model2_percentages[k] * state_dict2[ckpt].reshape(read_list[ckpt].data.shape)
+                                prim = read_list[ckpt]
+                                sec = state_dict2[ckpt]
+                                sec = sec if sec != None else state_dict2.get(ckpt.replace(".text_model", ""))
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
                         del state_dict2
                         del read_list
                     elif model2_path:
+                        print("diffusers-diffusers merge")
+                        torch.manual_seed(0)
                         pipe2 = StableDiffusionLongPromptWeightingPipeline.from_pretrained(model2_path, # revision="fp16",
                                    scheduler=scheduler, safety_checker = None
                                )
-
                         from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
                         read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
                         read_list2 = ckpt_to_diffusers_read_list(pipe2.unet, pipe2.vae, pipe2.text_encoder)
                         for ckpt in read_list:
                             if ckpt.startswith("model."):
-                                if k == 0:
-                                    read_list[ckpt].data = model_percentage * read_list[ckpt].data + model2_percentages[k] * read_list2[ckpt].data
-                                else:
-                                    read_list[ckpt].data += model2_percentages[k] * read_list2[ckpt].data
+                                prim = read_list[ckpt]
+                                sec = read_list2[ckpt]
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
                         del read_list
                         del read_list2
                         del pipe2
