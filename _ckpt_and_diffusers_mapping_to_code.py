@@ -86,7 +86,8 @@ def code_gen(parent_obj, parent_obj_name, mapping, code_addition = ""):
         if parent_obj_name != "text_model":
             code +=f""" = checkpoint.get("{ckpt}")""" + codeline_addition + "\n" 
         else:
-            code +=f""" = checkpoint["{ckpt}"] if "{ckpt}" in checkpoint else checkpoint.get("{ckpt.replace(".text_model", "")}")""" + codeline_addition + "\n" 
+            code +=f""" = checkpoint["{ckpt}"]""" + codeline_addition + \
+                   f""" if "{ckpt}" in checkpoint else checkpoint.get("{ckpt.replace(".text_model", "")}")""" + codeline_addition + "\n" 
     return code
 
 code += code_gen(unet, "unet", unet_ckpt_and_diffusers_mapping)
