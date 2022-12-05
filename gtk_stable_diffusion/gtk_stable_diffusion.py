@@ -325,11 +325,13 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 # the initialization is so slow so we just use compiled one; see ../_gen_ckpt_base.py
                 (unet, vae, text_model) = torch.load(os.path.dirname(__file__) + "/ckpt_base.pt")
 
-                state_dict = torch.load(model_path, map_location="cuda:0")["state_dict"]
+                state_dict = torch.load(model_path, map_location="cuda:0")
+                state_dict = state_dict.get("state_dict") or state_dict
 
                 for k, model2_path in enumerate(model2_paths):
                     if model2_path and model2_path[-5:] == ".ckpt":
-                        state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
+                        state_dict2 = torch.load(model2_path, map_location="cpu")
+                        state_dict2 = state_dict2.get("state_dict") or state_dict2
                         for i in state_dict: # on the fly model merging
                             if i.startswith("model.") and i in state_dict2:
                                 if k == 0:
@@ -393,7 +395,8 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
                 for k, model2_path in enumerate(model2_paths):
                     if model2_path and model2_path[-5:] == ".ckpt":
-                        state_dict2 = torch.load(model2_path, map_location="cpu")["state_dict"]
+                        state_dict2 = torch.load(model2_path, map_location="cpu")
+                        state_dict2 = state_dict2.get("state_dict") or state_dict2
                         from ckpt_to_diffusers_read_list import ckpt_to_diffusers_read_list
                         read_list = ckpt_to_diffusers_read_list(pipe.unet, pipe.vae, pipe.text_encoder)
                         for ckpt in read_list:

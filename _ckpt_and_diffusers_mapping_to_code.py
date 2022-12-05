@@ -83,7 +83,10 @@ def code_gen(parent_obj, parent_obj_name, mapping, code_addition = ""):
                 continue
             print("error: %s // code: %s // current: %s"%(dif, code, p))
             exit()
-        code +=f""" = checkpoint["{ckpt}"]""" + codeline_addition + "\n" 
+        if parent_obj_name != "text_model":
+            code +=f""" = checkpoint.get("{ckpt}")""" + codeline_addition + "\n" 
+        else:
+            code +=f""" = checkpoint.get("{ckpt}") or checkpoint.get("{ckpt.replace(".text_model", "")}")""" + codeline_addition + "\n" 
     return code
 
 code += code_gen(unet, "unet", unet_ckpt_and_diffusers_mapping)
