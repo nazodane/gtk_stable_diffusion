@@ -105,6 +105,9 @@ current_model = "{conf["current_model"] if "current_model" in conf and conf["cur
 # current_secondary_model is the current secondary stable-diffusion weights and percentages (a.k.a. model merging) for you to use. [default=""" + "{}" + f"""]
 current_secondary_model = {_current_secondary_model_str}
 
+# model_merging_method ("Weighted Add" or "Stochastic") is the method using for merging the primary and the secondary models [default="Weighted Add"]
+model_merging_method = "{conf.get("model_merging_method") or "Weighted Add"}"
+
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
 nsfw_filter = {"false" if "nsfw_filter" in conf and not conf["nsfw_filter"] else "true"}
@@ -138,6 +141,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 self.conf = toml.load(config_file_path+".bak") # read from backup config
             except:
                 dump_config({}) # initialize config
+                self.conf = toml.load(config_file_path)
 
         if not len(usable_models):
             import libtorrent as lt
@@ -263,7 +267,11 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             print("current secondary model path: %s"%(model2_paths))
             ms = f"%s %s%%"%(model_id, 100-secondary_used)
             for k, v in self.conf["current_secondary_model"].items():
-                ms += " / %s %s"%(k, v)
+                if self.conf.get("model_merging_method") == "Stochastic":
+                    ms += " | "
+                else:
+                    ms += " + "
+                ms += "%s %s"%(k, v)
 
         self.status_update('<big><b>Model Loading (%s)...</b></big>'%(ms))
 
@@ -291,6 +299,10 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 sec_tensor = sec_tensor.cuda()
             sec_tensor = sec_tensor.reshape(prim_tensor.shape)
 
+            if method == "Stochastic": # XXX: this stochastics is wrong for three or more merging
+                mask = torch.FloatTensor().new_empty(prim_tensor.shape).uniform_() < sec_weight
+                prim_tensor.data[mask] = sec_tensor[mask]
+                return
             if k == 0:
                 prim_tensor.data = prim_weight * prim_tensor + sec_weight * sec_tensor
             else:
@@ -525,9 +537,10 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                         print(fname)
                         if not os.path.exists(fname):
                             os.makedirs(fname, exist_ok=True)
-                        open(fname + "/prompt.txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s'%(\
+                        open(fname + "/prompt.txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s\nmodel_merging_method="%s"'%(\
                                                         prompt, neg_prompt, self.conf["current_model"], \
-                                                        secondary_model_to_string(self.conf["current_secondary_model"]))) # actually toml
+                                                        secondary_model_to_string(self.conf["current_secondary_model"]),
+                                                        self.conf.get("model_merging_method") or "Weighted Add")) # actually toml
                     pixbuf.savev(fname + "/%s.png"%(n), "png")
 
                     import math
@@ -556,6 +569,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             self.image_neg_prompt = neg_prompt
             self.image_primary_model = self.conf["current_model"]
             self.image_secondary_model = secondary_model_to_string(self.conf["current_secondary_model"])
+            self.image_model_merging_method = self.conf.get("model_merging_method") or "Weighted Add"
 
 #            print("done5")
 
@@ -864,9 +878,10 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             prompt = self._parent.image_prompt
             fname = save_prefix(self._parent, prompt, ".png")
 
-            open(fname + ".txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s'%(\
+            open(fname + ".txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s\nmodel_merging_method="%s"'%(\
                                             prompt, self._parent.image_neg_prompt, \
-                                            self._parent.image_primary_model, self._parent.image_secondary_model)) # actually toml
+                                            self._parent.image_primary_model, self._parent.image_secondary_model, \
+                                            self._parent.image_model_merging_method)) # actually toml
             self._parent.image.get_pixbuf().savev(fname + ".png", "png") # XXX: we should save on metadata?
             self._parent.debug_label.set_markup('<big><b>Saving: Done. (on %s)</b></big>'%(os.path.dirname(fname)))
 
@@ -894,6 +909,13 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             secondary_model_init(self._parent)
             dump_config(self._parent.conf)
             
+            self._parent.processing = True
+            threading.Thread(target=self._parent.process_modelload).start()
+
+        def on_merging_method_change(self):
+            self._parent.conf["model_merging_method"] = self.get_label()
+            dump_config(self._parent.conf)
+
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
@@ -973,6 +995,21 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                     m2menu.show()                    
                 menu.append(model2_menu)
                 model2_menu.show()
+                menu_count += 1
+
+            if not self._parent.processing:
+                mm_menu = Gtk.MenuItem.new_with_label("Merging Method")
+                mm_menu_child = Gtk.Menu()
+                mm_menu.set_submenu(mm_menu_child)
+                for mm_str in ["Weighted Add", "Stochastic"]:
+                    mmi_menu = Gtk.CheckMenuItem.new_with_label("%s"%(mm_str))
+                    mmi_menu.set_active(True if (self._parent.conf.get("model_merging_method") or "Weighted Add") == mm_str else False)
+                    mmi_menu._parent = self._parent
+                    mmi_menu.connect("activate", on_merging_method_change)
+                    mm_menu_child.append(mmi_menu)
+                    mmi_menu.show()
+                menu.append(mm_menu)
+                mm_menu.show()
                 menu_count += 1
 
             if not self._parent.processing:
