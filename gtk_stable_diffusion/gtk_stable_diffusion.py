@@ -168,6 +168,12 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                     shutil.copy(self.config_file_path, self.config_file_path + ".bak") # save backup config
                 with open(f_path, 'w') as f:
                     f.write(toml_txt)
+            def to_data_toml(self):
+                return f'prompt = """{self.last_prompt}"""\n' + \
+                       f'neg_prompt = """{self.last_neg_prompt}"""\n' + \
+                       f'primary_model="{self.current_model}"\n' + \
+                       f'secondary_model={self.current_secondary_model_toml}\n' + \
+                       f'model_merging_method="{self.model_merging_method}"'
 
         self.conf = Config()
 
@@ -554,10 +560,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                         print(fname)
                         if not os.path.exists(fname):
                             os.makedirs(fname, exist_ok=True)
-                        open(fname + "/prompt.txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s\nmodel_merging_method="%s"'%(\
-                                                        prompt, neg_prompt, self.conf.current_model, \
-                                                        self.conf.current_secondary_model_toml,
-                                                        self.conf.model_merging_method)) # actually toml
+                        open(fname + "/prompt.txt", "w").write(self.conf.to_data_toml())
                     pixbuf.savev(fname + "/%s.png"%(n), "png")
 
                     import math
@@ -582,11 +585,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 
 #            print("done4")
             self.image.set_from_pixbuf(pixbuf)
-            self.image_prompt = prompt
-            self.image_neg_prompt = neg_prompt
-            self.image_primary_model = self.conf.current_model
-            self.image_secondary_model = self.conf.current_secondary_model_toml
-            self.image_model_merging_method = self.conf.model_merging_method
+            self.image_conf = self.conf.clone()
 
 #            print("done5")
 
@@ -892,13 +891,10 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
         def on_save(self):
             self._parent.debug_label.set_markup('<big><b>Saving...</b></big>')
 
-            prompt = self._parent.image_prompt
+            prompt = self._parent.image_conf.last_prompt
             fname = save_prefix(self._parent, prompt, ".png")
 
-            open(fname + ".txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s\nmodel_merging_method="%s"'%(\
-                                            prompt, self._parent.image_neg_prompt, \
-                                            self._parent.image_primary_model, self._parent.image_secondary_model, \
-                                            self._parent.image_model_merging_method)) # actually toml
+            open(fname + ".txt", "w").write(self._parent.image_conf.to_data_toml())
             self._parent.image.get_pixbuf().savev(fname + ".png", "png") # XXX: we should save on metadata?
             self._parent.debug_label.set_markup('<big><b>Saving: Done. (on %s)</b></big>'%(os.path.dirname(fname)))
 
