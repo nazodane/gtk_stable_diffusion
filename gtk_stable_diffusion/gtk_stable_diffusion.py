@@ -315,7 +315,10 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 
             if method == "Probability": # XXX: this probability is wrong for three or more merging
                 mask = torch.FloatTensor().new_empty(prim_tensor.shape).uniform_() < sec_weight
-                prim_tensor.data[mask] = sec_tensor[mask].float()
+                if prim_tensor.data.dtype == torch.half:
+                    prim_tensor.data[mask] = sec_tensor[mask].half()
+                elif prim_tensor.data.dtype == torch.float:
+                    prim_tensor.data[mask] = sec_tensor[mask].float()
                 return
             if k == 0:
                 prim_tensor.data = prim_weight * prim_tensor + sec_weight * sec_tensor
