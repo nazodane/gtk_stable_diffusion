@@ -47,8 +47,6 @@ class GTKStableDiffusion:
         home = str(Path.home())
         global config_dir
         config_dir = home + "/.config/gtk-stable-diffusion/"
-        global config_file_path
-        config_file_path = config_dir + "config.toml"
 
         global usable_models
         usable_models = {}
@@ -82,66 +80,100 @@ class GTKStableDiffusion:
                     continue
                 usable_models[d] = repo_path
 
-        global secondary_model_to_string
-        def secondary_model_to_string(model_dict):
-            return "{" + (", ".join([ f'"%s" = "%s"'%(x,y) for x,y in model_dict.items()])) + "}"
+        class Config:
+            conf = {}
+            config_file_path = config_dir + "config.toml"
+            def __init__(self):
+                if not os.path.exists(self.config_file_path):
+                    os.makedirs(config_dir, exist_ok=True)
+                    self.conf = {}
+                    self.dump() # initialize config
+                import toml
+                try:
+                    print("load settings")
+                    self.conf = toml.load(self.config_file_path)
+                except:
+                    shutil.copy(self.config_file_path, self.config_file_path + ".err")
+                    try:
+                        print("load settings from backup")
+                        self.conf = toml.load(self.config_file_path+".bak")
+                    except:
+                        print("initialize config")
+                        self.conf = {"current_secondary_model": {}}
+                        self.dump()
+                        self.conf = toml.load(self.config_file_path)
+
+                if "current_secondary_model" in self.conf and type(self.conf["current_secondary_model"]) == str: # for compatibility
+                    self.conf["current_secondary_model"] = {self.conf["current_secondary_model"]: "50%"}
+                if "current_secondary_model" not in self.conf or not hasattr(self.conf["current_secondary_model"], "keys"):
+                    self.conf["current_secondary_model"] = {}
+
+                return
+
+            def clone(self):
+                import copy
+                return copy.deepcopy(self)
+
+            current_model = property(lambda self: self.conf["current_model"] if "current_model" in self.conf and self.conf["current_model"] in usable_models else "sd-v1-4")
+            current_model = current_model.setter(lambda self, value: self.conf.__setitem__("current_model", value))
+
+            secondary_used = property(lambda self: sum([int(p[0:-1]) for i, p in self.conf["current_secondary_model"].items()]))
+            current_secondary_model = property(lambda self: self.conf["current_secondary_model"])
+            current_secondary_model = current_secondary_model.setter(lambda self, value: self.conf.__setitem__("current_secondary_model", value))
+            current_secondary_model_toml = property(lambda self: "{" + (", ".join([ f'"%s" = "%s"'%(x,y) for x,y in self.conf["current_secondary_model"].items()])) + "}")
+
+            model_merging_method = property(lambda self: self.conf["model_merging_method"] if "model_merging_method" in self.conf else "Weighted Add")
+            model_merging_method = model_merging_method.setter(lambda self, value: self.conf.__setitem__("model_merging_method", value))
+
+            nsfw_filter = property(lambda self: self.conf["nsfw_filter"] if "nsfw_filter" in self.conf else True)
+            nsfw_filter = nsfw_filter.setter(lambda self, value: self.conf.__setitem__("nsfw_filter", value))
+
+            show_nsfw_filter_toggle = property(lambda self: self.conf["show_nsfw_filter_toggle"] if "show_nsfw_filter_toggle" in self.conf else True)
+            show_nsfw_filter_toggle = show_nsfw_filter_toggle.setter(lambda self, value: self.conf.__setitem__("show_nsfw_filter_toggle", value))
+
+            last_prompt = property(lambda self: self.conf["last_prompt"] if "last_prompt" in self.conf else "")
+            last_prompt = last_prompt.setter(lambda self, value: self.conf.__setitem__("last_prompt", value))
+
+            last_neg_prompt = property(lambda self: self.conf["last_neg_prompt"] if "last_neg_prompt" in self.conf else "")
+            last_neg_prompt = last_neg_prompt.setter(lambda self, value: self.conf.__setitem__("last_neg_prompt", value))
+
+            def dump(self):
+                f_path = self.config_file_path
+
+                toml_txt =  f"""
+# current_model is the current primary stable-diffusion weights for you to use. [default="sd-v1-4"]
+current_model = "{self.current_model}"
+
+# current_secondary_model is the current secondary stable-diffusion weights and percentages (a.k.a. model merging) for you to use. [default=""" + "{}" + f"""]
+current_secondary_model = {self.current_secondary_model_toml}
+
+# model_merging_method ("Weighted Add" or "Probability") is the method using for merging the primary and the secondary models [default="Weighted Add"]
+model_merging_method = "{self.model_merging_method}"
+
+# nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
+# It's your responsibility to cater to your regulating authority wishes, not by us.
+nsfw_filter = {"true" if self.nsfw_filter else "false"}
+
+# show_nsfw_filter_toggle is for you who don't want to change the nsfw toggle. [default=true]
+show_nsfw_filter_toggle = {"true" if self.show_nsfw_filter_toggle else "false"}
+
+# last_prompt is the last prompt that you use to generate. [default=""]
+last_prompt = """ + '"""' + self.last_prompt + '"""'+ """
+
+# last_neg_prompt is the last negative prompt that you use to generate. [default=""]
+last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
+""" # XXX: escapes are lacking...
+
+                if os.path.exists(f_path):
+                    shutil.copy(self.config_file_path, self.config_file_path + ".bak") # save backup config
+                with open(f_path, 'w') as f:
+                    f.write(toml_txt)
+
+        self.conf = Config()
 
 # Note: We chose TOML because it's commentable (against JSON), simple (against YAML or XML), and non-ambiguous (against INI)
 # Although we just implement toml dump as text dump because
 # toml.load with toml.TomlPreserveCommentDecoder and toml.dump with toml.TomlPreserveCommentEncoder are completely broken.
-        global dump_config
-        def dump_config(conf):
-            f_path = config_file_path
-            _current_secondary_model = conf["current_secondary_model"] if "current_model" in conf and hasattr(conf["current_secondary_model"], "keys") else \
-                                       {conf["current_secondary_model"]: "50%"} if "current_model" in conf and type(conf["current_secondary_model"]) == str else\
-                                       {}
-            _current_secondary_model_str = secondary_model_to_string(_current_secondary_model)
-            print(_current_secondary_model_str)
-            
-            toml_txt =  f"""
-# current_model is the current primary stable-diffusion weights for you to use. [default="sd-v1-4"]
-current_model = "{conf["current_model"] if "current_model" in conf and conf["current_model"] in usable_models else "sd-v1-4"}"
-
-# current_secondary_model is the current secondary stable-diffusion weights and percentages (a.k.a. model merging) for you to use. [default=""" + "{}" + f"""]
-current_secondary_model = {_current_secondary_model_str}
-
-# model_merging_method ("Weighted Add" or "Probability") is the method using for merging the primary and the secondary models [default="Weighted Add"]
-model_merging_method = "{conf.get("model_merging_method") or "Weighted Add"}"
-
-# nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
-# It's your responsibility to cater to your regulating authority wishes, not by us.
-nsfw_filter = {"false" if "nsfw_filter" in conf and not conf["nsfw_filter"] else "true"}
-
-# show_nsfw_filter_toggle is for you who don't want to change the nsfw toggle. [default=true]
-show_nsfw_filter_toggle = {"false" if "show_nsfw_filter_toggle" in conf and not conf["show_nsfw_filter_toggle"] else "true"}
-
-# last_prompt is the last prompt that you use to generate. [default=""]
-last_prompt = """ + '"""' + (conf["last_prompt"] if "last_prompt" in conf else "") + '"""'+ """
-
-# last_neg_prompt is the last negative prompt that you use to generate. [default=""]
-last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in conf else "") + '"""'+ """
-""" # XXX: escapes are lacking...
-
-            if os.path.exists(f_path):
-                shutil.copy(config_file_path, config_file_path + ".bak") # save backup config
-            with open(f_path, 'w') as f:
-                f.write(toml_txt)
-
-        if not os.path.exists(config_file_path):
-            os.makedirs(config_dir, exist_ok=True)
-            dump_config({}) # initialize config
-
-
-        import toml
-        try:
-            self.conf = toml.load(config_file_path)
-        except:
-            shutil.copy(config_file_path, config_file_path + ".err")
-            try:
-                self.conf = toml.load(config_file_path+".bak") # read from backup config
-            except:
-                dump_config({}) # initialize config
-                self.conf = toml.load(config_file_path)
 
         if not len(usable_models):
             import libtorrent as lt
@@ -189,23 +221,6 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
             usable_models["sd-v1-4"] = model_dir
 
-        global secondary_model_init
-        def secondary_model_init(self):
-            if "current_secondary_model" not in self.conf:
-                if type(self.conf["current_secondary_model"]) == str:
-                    self.conf["current_secondary_model"] = {self.conf["current_secondary_model"]: "50%"}
-                if not hasattr(self.conf["current_secondary_model"], "keys"):
-                    self.conf["current_secondary_model"] = {}
-            global secondary_used
-            secondary_used = 0
-            for i, p in list(self.conf["current_secondary_model"].items()):
-                if i not in usable_models:
-                    del self.conf["current_secondary_model"][i]
-                    continue
-                secondary_used += int(p[0:-1])
-        secondary_model_init(self)
-
-
         global save_prefix
         def save_prefix(self, prompt, postfix):
             import subprocess
@@ -229,12 +244,12 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 #                 print(fname)
             return fname
 
-        print(self.conf["last_prompt"])
+        print(self.conf.last_prompt)
         prompt_buf = self.prompt_tv.get_buffer()
-        prompt_buf.set_text(self.conf["last_prompt"])
-        print(self.conf["last_neg_prompt"])
+        prompt_buf.set_text(self.conf.last_prompt)
+        print(self.conf.last_neg_prompt)
         neg_prompt_buf = self.neg_prompt_tv.get_buffer()
-        neg_prompt_buf.set_text(self.conf["last_neg_prompt"])
+        neg_prompt_buf.set_text(self.conf.last_neg_prompt)
 
         self.processing = True
         self.delay_inited = True
@@ -248,14 +263,13 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
 
         print(usable_models)
 
-        if "current_model" in self.conf and self.conf["current_model"] in usable_models:
-            model_id = self.conf["current_model"]
-            model_path = usable_models[model_id]
-            model_percentage = (100-secondary_used)/100.0
+        model_id = self.conf.current_model
+        model_path = usable_models[model_id]
+        model_percentage = (100-self.conf.secondary_used)/100.0
 
-        model2_ids = self.conf["current_secondary_model"].keys()
+        model2_ids = self.conf.current_secondary_model.keys()
         model2_paths = [usable_models[model2_id] for model2_id in model2_ids]
-        model2_percentages = [int(v[0:-1])/100.0 for v in self.conf["current_secondary_model"].values()]
+        model2_percentages = [int(v[0:-1])/100.0 for v in self.conf.current_secondary_model.values()]
         print(model2_ids)
         print(model2_paths)
         print(model2_percentages)
@@ -265,9 +279,9 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
         ms = model_id
         if len(model2_paths):
             print("current secondary model path: %s"%(model2_paths))
-            ms = f"%s %s%%"%(model_id, 100-secondary_used)
-            for k, v in self.conf["current_secondary_model"].items():
-                if self.conf.get("model_merging_method") == "Probability":
+            ms = f"%s %s%%"%(model_id, 100-self.conf.secondary_used)
+            for k, v in self.conf.current_secondary_model.items():
+                if self.conf.model_merging_method == "Probability":
                     ms += " | "
                 else:
                     ms += " + "
@@ -362,7 +376,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                                 prim = prim if prim != None else state_dict.get(i.replace(".text_model", ""))
                                 sec = state_dict2.get(i)
                                 sec = sec if sec != None else state_dict2.get(i.replace(".text_model", ""))
-                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.model_merging_method, k)
                         del state_dict2
                         torch.cuda.empty_cache()
                     elif model2_path:
@@ -378,7 +392,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                                 prim = state_dict.get(ckpt)
                                 prim = prim if prim != None else state_dict.get(ckpt.replace(".text_model", ""))
                                 sec = read_list2[ckpt]
-                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.model_merging_method, k)
                         del read_list2
                         del pipe2
                         torch.cuda.empty_cache()
@@ -432,7 +446,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                                 prim = read_list[ckpt]
                                 sec = state_dict2[ckpt]
                                 sec = sec if sec != None else state_dict2.get(ckpt.replace(".text_model", ""))
-                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.model_merging_method, k)
                         del state_dict2
                         del read_list
                     elif model2_path:
@@ -448,7 +462,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                             if ckpt.startswith("model."):
                                 prim = read_list[ckpt]
                                 sec = read_list2[ckpt]
-                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.get("model_merging_method"), k)
+                                model_merge(prim, model_percentage, sec, model2_percentages[k], self.conf.model_merging_method, k)
                         del read_list
                         del read_list2
                         del pipe2
@@ -475,9 +489,9 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
         prompt = prompt_buf.get_text(*prompt_buf.get_bounds(), True)
         neg_prompt_buf = self.neg_prompt_tv.get_buffer()
         neg_prompt = neg_prompt_buf.get_text(*neg_prompt_buf.get_bounds(), True)
-        self.conf["last_prompt"] = prompt
-        self.conf["last_neg_prompt"] = neg_prompt
-        dump_config(self.conf)
+        self.conf.last_prompt = prompt
+        self.conf.last_neg_prompt = neg_prompt
+        self.conf.dump()
 
         self.status_update('<big><b>Processing...</b></big>')
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
@@ -505,7 +519,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
 #                print("done1")
                 img_arr = img_tensor.cpu().float().numpy()
-                if "nsfw_filter" not in self.conf or self.conf["nsfw_filter"] == True:
+                if self.conf.nsfw_filter == True:
 # copied and adopted from
 # https://github.com/huggingface/diffusers/blob/2c6bc0f13ba2ba609ac141022b4b56b677d74943/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
                     self.status_update('<big><b>Processing NSFW filter...</b></big>')
@@ -538,9 +552,9 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                         if not os.path.exists(fname):
                             os.makedirs(fname, exist_ok=True)
                         open(fname + "/prompt.txt", "w").write('prompt = """%s"""\nneg_prompt = """%s"""\nprimary_model="%s"\nsecondary_model=%s\nmodel_merging_method="%s"'%(\
-                                                        prompt, neg_prompt, self.conf["current_model"], \
-                                                        secondary_model_to_string(self.conf["current_secondary_model"]),
-                                                        self.conf.get("model_merging_method") or "Weighted Add")) # actually toml
+                                                        prompt, neg_prompt, self.conf.current_model, \
+                                                        self.conf.current_secondary_model_toml,
+                                                        self.conf.model_merging_method)) # actually toml
                     pixbuf.savev(fname + "/%s.png"%(n), "png")
 
                     import math
@@ -567,9 +581,9 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             self.image.set_from_pixbuf(pixbuf)
             self.image_prompt = prompt
             self.image_neg_prompt = neg_prompt
-            self.image_primary_model = self.conf["current_model"]
-            self.image_secondary_model = secondary_model_to_string(self.conf["current_secondary_model"])
-            self.image_model_merging_method = self.conf.get("model_merging_method") or "Weighted Add"
+            self.image_primary_model = self.conf.current_model
+            self.image_secondary_model = self.conf.current_secondary_model_toml
+            self.image_model_merging_method = self.conf.model_merging_method
 
 #            print("done5")
 
@@ -888,12 +902,11 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
         def on_model_change(self):
             model_id = self.get_label()
 
-            if model_id in self._parent.conf["current_secondary_model"]:
-                del self._parent.conf["current_secondary_model"][model_id]
-                secondary_model_init(self._parent)
+            if model_id in self._parent.conf.current_secondary_model:
+                del self._parent.conf.current_secondary_model[model_id]
 
-            self._parent.conf["current_model"] = model_id
-            dump_config(self._parent.conf)
+            self._parent.conf.current_model = model_id
+            self._parent.conf.dump()
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
@@ -902,19 +915,18 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
             percentage = self.get_label()
 
             if percentage == "None":
-                if model_id in self._parent.conf["current_secondary_model"]:
-                    del self._parent.conf["current_secondary_model"][model_id]
+                if model_id in self._parent.conf.current_secondary_model:
+                    del self._parent.conf.current_secondary_model[model_id]
             else:
-                self._parent.conf["current_secondary_model"][model_id] = percentage
-            secondary_model_init(self._parent)
-            dump_config(self._parent.conf)
+                self._parent.conf.current_secondary_model[model_id] = percentage
+            self._parent.conf.dump()
             
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
 
         def on_merging_method_change(self):
-            self._parent.conf["model_merging_method"] = self.get_label()
-            dump_config(self._parent.conf)
+            self._parent.conf.model_merging_method = self.get_label()
+            self._parent.conf.dump()
 
             self._parent.processing = True
             threading.Thread(target=self._parent.process_modelload).start()
@@ -929,14 +941,14 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 return
             menu = Gtk.Menu()
             menu_count = 0
-            if "show_nsfw_filter_toggle" in self._parent.conf and self._parent.conf["show_nsfw_filter_toggle"]:
+            if self._parent.conf.show_nsfw_filter_toggle:
                 nsfwf_menu = Gtk.CheckMenuItem.new_with_label("NSFW Filter OFF")
                 nsfwf_menu._parent = self._parent
-                nsfwf_menu.set_active(True if "nsfw_filter" in self._parent.conf and not self._parent.conf["nsfw_filter"] else False)
+                nsfwf_menu.set_active(not self._parent.conf.nsfw_filter)
                 menu.append(nsfwf_menu)
                 def on_nsfwf_toggle(self):
-                    self._parent.conf["nsfw_filter"] = not self.get_active()
-                    dump_config(self._parent.conf)
+                    self._parent.conf.nsfw_filter = not self.get_active()
+                    self._parent.conf.dump()
                 nsfwf_menu.connect("toggled", on_nsfwf_toggle)
                 nsfwf_menu.show()
                 menu_count += 1
@@ -947,7 +959,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 model_menu.set_submenu(model_menu_child)
                 for m_name in usable_models:
                     mmenu = Gtk.CheckMenuItem.new_with_label(m_name)
-                    mmenu.set_active(True if "current_model" in self._parent.conf and m_name == self._parent.conf["current_model"] else False)
+                    mmenu.set_active(True if m_name == self._parent.conf.current_model else False)
                     mmenu._parent = self._parent
                     mmenu.connect("activate", on_model_change)
                     model_menu_child.append(mmenu)
@@ -961,28 +973,28 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 model2_menu_child = Gtk.Menu()
                 model2_menu.set_submenu(model2_menu_child)
 
-                m2menu = Gtk.CheckMenuItem.new_with_label("None")
-                m2menu.set_active(True if "current_secondary_model" not in self._parent.conf or self._parent.conf["current_secondary_model"]=="None" else False)
-                m2menu._parent = self._parent
+#                m2menu = Gtk.CheckMenuItem.new_with_label("None")
+#                m2menu.set_active(True if self._parent.conf.current_secondary_model=="None" else False)
+#                m2menu._parent = self._parent
+
 #                m2menu.connect("activate", on_model2_change)
 
                 for m_name in usable_models:
-                    if "current_model" in self._parent.conf and m_name == self._parent.conf["current_model"]:
+                    if m_name == self._parent.conf.current_model:
                         continue
                     m2menu = Gtk.CheckMenuItem.new_with_label(m_name)
                     m2menu_child = Gtk.Menu()
                     m2menu.set_submenu(m2menu_child)
-                    m2menu.set_active(True if "current_secondary_model" in self._parent.conf and m_name in self._parent.conf["current_secondary_model"] else False)
+                    m2menu.set_active(True if m_name in self._parent.conf.current_secondary_model else False)
                     m2menu._parent = self._parent
                     m2menu.connect("select", lambda self: \
-                        self.set_active(False if "current_secondary_model" in self._parent.conf and\
-                            self.get_label() in self._parent.conf["current_secondary_model"] else True)) # XXX: for prevent bugs on select
+                        self.set_active(False if self.get_label() in self._parent.conf.current_secondary_model else True)) # XXX: for prevent bugs on select
 #                    m2menu.connect("activate", on_model2_change)
 
 
-                    val = int(self._parent.conf["current_secondary_model"][m_name][0:-1]) if m_name in self._parent.conf["current_secondary_model"] else 0
+                    val = int(self._parent.conf.current_secondary_model[m_name][0:-1]) if m_name in self._parent.conf.current_secondary_model else 0
                     for p in [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]:
-                        if (p >= 100 - secondary_used + val): # don't over 100%
+                        if (p >= 100 - self._parent.conf.secondary_used + val): # don't over 100%
                             break
                         pmenu = Gtk.CheckMenuItem.new_with_label(str(p) + "%" if p else "None")
                         pmenu.set_active(True if p == val else False)
@@ -1003,7 +1015,7 @@ last_neg_prompt = """ + '"""' + (conf["last_neg_prompt"] if "last_neg_prompt" in
                 mm_menu.set_submenu(mm_menu_child)
                 for mm_str in ["Weighted Add", "Probability"]:
                     mmi_menu = Gtk.CheckMenuItem.new_with_label("%s"%(mm_str))
-                    mmi_menu.set_active(True if (self._parent.conf.get("model_merging_method") or "Weighted Add") == mm_str else False)
+                    mmi_menu.set_active(True if self._parent.conf.model_merging_method == mm_str else False)
                     mmi_menu._parent = self._parent
                     mmi_menu.connect("activate", on_merging_method_change)
                     mm_menu_child.append(mmi_menu)
