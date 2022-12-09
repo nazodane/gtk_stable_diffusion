@@ -131,6 +131,12 @@ class GTKStableDiffusion:
             scheduler_steps = property(lambda self: self.conf["scheduler_steps"] if "scheduler_steps" in self.conf else 10)
             scheduler_steps = scheduler_steps.setter(lambda self, value: self.conf.__setitem__("scheduler_steps", value))
 
+            image_width = property(lambda self: self.conf["image_width"] if "image_width" in self.conf else 512)
+            image_width = image_width.setter(lambda self, value: self.conf.__setitem__("image_width", value))
+
+            image_height = property(lambda self: self.conf["image_height"] if "image_height" in self.conf else 512)
+            image_height = image_height.setter(lambda self, value: self.conf.__setitem__("image_height", value))
+
             nsfw_filter = property(lambda self: self.conf["nsfw_filter"] if "nsfw_filter" in self.conf else True)
             nsfw_filter = nsfw_filter.setter(lambda self, value: self.conf.__setitem__("nsfw_filter", value))
 
@@ -161,6 +167,12 @@ scheduler_method = "{self.scheduler_method}"
 
 # scheduler_steps is the step number used in the reverse-diffusion process [default=10]
 scheduler_steps = {self.scheduler_steps}
+
+# image_width is the width of the output image [default=512]
+image_width = {self.image_width}
+
+# image_height is the height of the output image [default=512]
+image_height = {self.image_height}
 
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
@@ -500,7 +512,8 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
         pipe.unet.to(memory_format=torch.channels_last)  # in-place operation
 
         torch.manual_seed(0)
-        self.tensorsa = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
+        self.tensorsa = torch.tensor_split(torch.randn((1, 4, self.conf.image_height // 8, self.conf.image_width // 8), \
+                                           generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
         self.pipe = pipe
         time_end = time.perf_counter()
         self.status_update('<big><b>Model Loading (%s): Done (%.2fs, %.2fs, %.2fs, %.2fs)</b></big>'%(ms, \
@@ -565,7 +578,8 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 #                print("done -4")
                 tensorsa = self.tensorsa
 #                print("done -3")
-                tensorsb = torch.tensor_split(torch.randn((1, 4, 512 // 8, 512 // 8), generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
+                tensorsb = torch.tensor_split(torch.randn((1, 4, self.conf.image_height // 8, self.conf.image_width // 8),\
+                                              generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1)
 #                print("done -2")
 
                 # black magic
@@ -574,7 +588,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 #                print("done -1")
 
                 img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=self.conf.scheduler_steps,
-                                       width=512, height=512, latents=latents, output_type="raw").images # [0]
+                                       width=self.conf.image_width, height=self.conf.image_height, latents=latents, output_type="raw").images # [0]
 #                print("done1")
                 img_arr = img_tensor.cpu().float().numpy()
                 if self.conf.nsfw_filter == True:
@@ -594,14 +608,14 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                     if has_nsfw_concept[0]:
                         print("NSFW")
                         img[0] = img[0].resize((16, 16), resample=Image.Resampling.BILINEAR)\
-                                       .resize((512, 512), Image.Resampling.NEAREST)
+                                       .resize((self.conf.image_width, self.conf.image_height), Image.Resampling.NEAREST)
                         img_arr = np.array(img[0]) / 255.0
                         img_arr = np.array([img_arr])
 #                print("done2")
                 img_ubarr = (img_arr * 255).round().astype("uint8")
 #                print("done3")
                 pixbuf = GdkPixbuf.Pixbuf.new_from_data(img_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
-                                                            False, 8, 512, 512, 3*512)
+                                                            False, 8, self.conf.image_width, self.conf.image_height, 3*self.conf.image_width)
 
                 if hasattr(self, "batch_max"):
                     if not view_pixbuf:
@@ -614,14 +628,15 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 
                     import math
                     ml = math.sqrt(self.batch_max)
-                    s = int(512//ml)
-                    item_img = np.array(Image.fromarray(img_ubarr[0]).resize((s, s), Image.Resampling.LANCZOS))
+                    ws = int(self.conf.image_width//ml)
+                    hs = int(self.conf.image_height//ml)
+                    item_img = np.array(Image.fromarray(img_ubarr[0]).resize((ws, hs), Image.Resampling.LANCZOS))
                     item_pixbuf = GdkPixbuf.Pixbuf.new_from_data(item_img.flatten(), GdkPixbuf.Colorspace.RGB,
-                                                                 False, 8, s, s, 3*s)
+                                                                 False, 8, ws, hs, 3*ws)
                     if not view_pixbuf:
                         view_pixbuf = GdkPixbuf.Pixbuf.new_from_data(np.zeros(img_ubarr.flatten().shape, dtype=img_ubarr.flatten().dtype),
-                                                                     GdkPixbuf.Colorspace.RGB, False, 8, 512, 512, 3*512)
-                    item_pixbuf.copy_area(0, 0, s, s, view_pixbuf, s * int(n%ml), s * int(n//ml))
+                                                                     GdkPixbuf.Colorspace.RGB, False, 8, self.conf.image_width, self.conf.image_height, 3*self.conf.image_width)
+                    item_pixbuf.copy_area(0, 0, ws, hs, view_pixbuf, ws * int(n%ml), hs * int(n//ml))
                     # XXX: textencode should reuse, cancellable, jax integration
                     # automatic prompt saving, output format (metadata in the image)
                     self.image.set_from_pixbuf(view_pixbuf)
@@ -650,7 +665,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 
             self.status_update('<big><b>Processing: Preview Generating...</b></big>')
 #            print("done18")
-            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).resize((64, 64), Image.Resampling.LANCZOS))
+            img_prev_ubarr = np.array(Image.fromarray(img_ubarr[0]).resize((64, 64), Image.Resampling.LANCZOS)) # TODO: aspect ratio
             pixbuf_prev = GdkPixbuf.Pixbuf.new_from_data(img_prev_ubarr.flatten(), GdkPixbuf.Colorspace.RGB,
                                                         False, 8, 64, 64, 3*64)
 
@@ -1081,14 +1096,14 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                     smmenu.set_active(True if self._parent.conf.scheduler_method == method else False)
                     smmenu._method = method
                     smmenu._parent = self._parent
-                    smmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_method", self._method))
+                    smmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_method", self._method)) # XXX: setting dump is not yet supported...
                     smethod_menu_child.append(smmenu)
                     smmenu.show()
                 menu.append(smethod_menu)
                 smethod_menu.show()
                 menu_count += 1
 
-            if not self._parent.processing: # hmm...is this needed?
+            if not self._parent.processing:
                 step_menu = Gtk.MenuItem.new_with_label("Scheduler Step")
                 step_menu_child = Gtk.Menu()
                 step_menu.set_submenu(step_menu_child)
@@ -1097,11 +1112,34 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                     scmenu.set_active(True if self._parent.conf.scheduler_steps == step_count else False)
                     scmenu._count = step_count
                     scmenu._parent = self._parent
-                    scmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_steps", self._count))
+                    scmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_steps", self._count)) # XXX: setting dump is not yet supported...
                     step_menu_child.append(scmenu)
                     scmenu.show()
                 menu.append(step_menu)
                 step_menu.show()
+                menu_count += 1
+
+            if not self._parent.processing:
+                imgsize_menu = Gtk.MenuItem.new_with_label("Image Size")
+                imgsize_menu_child = Gtk.Menu()
+                imgsize_menu.set_submenu(imgsize_menu_child)
+                for size in [(512, 512), (512, 768), (768, 512), (768, 768), (1024, 1024)]:
+                    sizemenu = Gtk.CheckMenuItem.new_with_label("%sx%s"%(size[0], size[1]))
+                    sizemenu.set_active(True if self._parent.conf.image_width == size[0] and\
+                                                self._parent.conf.image_height == size[1] else False)
+                    sizemenu._size = size
+                    sizemenu._parent = self._parent
+                    def on_imgsize_change(self):
+                        self._parent.conf.image_width = self._size[0]
+                        self._parent.conf.image_height = self._size[1]
+                        self._parent.conf.dump()
+                        self._parent.tensorsa = torch.tensor_split(torch.randn((1, 4, self._parent.conf.image_height // 8, self._parent.conf.image_width // 8), \
+                                                                   generator=None, device="cuda", dtype=torch.float).to(torch.float), 16, -1) # XXX: needs cleanup
+                    sizemenu.connect("activate", on_imgsize_change)
+                    imgsize_menu_child.append(sizemenu)
+                    sizemenu.show()
+                menu.append(imgsize_menu)
+                imgsize_menu.show()
                 menu_count += 1
 
             if not self._parent.processing:
