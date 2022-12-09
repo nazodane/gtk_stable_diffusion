@@ -125,6 +125,12 @@ class GTKStableDiffusion:
             model_merging_method = property(lambda self: self.conf["model_merging_method"] if "model_merging_method" in self.conf else "Weighted Add")
             model_merging_method = model_merging_method.setter(lambda self, value: self.conf.__setitem__("model_merging_method", value))
 
+            scheduler_method = property(lambda self: self.conf["scheduler_method"] if "scheduler_method" in self.conf else "KDPM2DiscreteScheduler")
+            scheduler_method = scheduler_method.setter(lambda self, value: self.conf.__setitem__("scheduler_method", value))
+
+            scheduler_steps = property(lambda self: self.conf["scheduler_steps"] if "scheduler_steps" in self.conf else 10)
+            scheduler_steps = scheduler_steps.setter(lambda self, value: self.conf.__setitem__("scheduler_steps", value))
+
             nsfw_filter = property(lambda self: self.conf["nsfw_filter"] if "nsfw_filter" in self.conf else True)
             nsfw_filter = nsfw_filter.setter(lambda self, value: self.conf.__setitem__("nsfw_filter", value))
 
@@ -150,6 +156,12 @@ current_secondary_model = {self.current_secondary_model_toml}
 # model_merging_method ("Weighted Add" or "Probability") is the method using for merging the primary and the secondary models [default="Weighted Add"]
 model_merging_method = "{self.model_merging_method}"
 
+# scheduler_method is the method used in the reverse-diffusion process [default="KDPM2DiscreteScheduler"]
+scheduler_method = "{self.scheduler_method}"
+
+# scheduler_steps is the step number used in the reverse-diffusion process [default=10]
+scheduler_steps = {self.scheduler_steps}
+
 # nsfw_filter is for regulating erotics, grotesque, or ... something many normal things. [default=true]
 # It's your responsibility to cater to your regulating authority wishes, not by us.
 nsfw_filter = {"true" if self.nsfw_filter else "false"}
@@ -173,7 +185,9 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                        f'neg_prompt = """{self.last_neg_prompt}"""\n' + \
                        f'primary_model="{self.current_model}"\n' + \
                        f'secondary_model={self.current_secondary_model_toml}\n' + \
-                       f'model_merging_method="{self.model_merging_method}"'
+                       f'model_merging_method="{self.model_merging_method}"\n' + \
+                       f'scheduler_method="{self.scheduler_method}"\n' + \
+                       f'scheduler_steps={self.scheduler_steps}\n'
 
         self.conf = Config()
 
@@ -502,9 +516,43 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
         self.conf.last_neg_prompt = neg_prompt
         self.conf.dump()
 
-        self.status_update('<big><b>Processing...</b></big>')
+        ps = "%s %s steps"%(self.conf.scheduler_method, self.conf.scheduler_steps)
+        self.status_update('<big><b>Processing...(%s)</b></big>'%(ps))
 #        self._parent.debug_label.set_markup('<big><b>Prompt:</b> %s <b>Neg:</b> %s</big>'%(prompt, neg_prompt))
 #        print("done -6")
+        print(str(type(self.pipe.scheduler)))
+        if self.conf.scheduler_method == "DPMSolverMultistepScheduler":
+            if str(type(self.pipe.scheduler)).find("DPMSolverMultistepScheduler") < 0:
+                from diffusers import DPMSolverMultistepScheduler
+                self.pipe.scheduler = DPMSolverMultistepScheduler(
+                        beta_start=self.pipe.scheduler.beta_start,
+                        beta_end=self.pipe.scheduler.beta_end,
+                        beta_schedule=self.pipe.scheduler.beta_schedule,
+                    )
+        elif self.conf.scheduler_method == "DPMSolverSinglestepScheduler":
+            if str(type(self.pipe.scheduler)).find("DPMSolverSinglestepScheduler") < 0:
+                from diffusers import DPMSolverSinglestepScheduler
+                self.pipe.scheduler = DPMSolverSinglestepScheduler(
+                        beta_start=self.pipe.scheduler.beta_start,
+                        beta_end=self.pipe.scheduler.beta_end,
+                        beta_schedule=self.pipe.scheduler.beta_schedule,
+                    )
+        elif self.conf.scheduler_method == "KDPM2DiscreteScheduler":
+            if str(type(self.pipe.scheduler)).find("KDPM2DiscreteScheduler") < 0:
+                from diffusers import KDPM2DiscreteScheduler
+                self.pipe.scheduler = KDPM2DiscreteScheduler(
+                        beta_start=self.pipe.scheduler.beta_start,
+                        beta_end=self.pipe.scheduler.beta_end,
+                        beta_schedule=self.pipe.scheduler.beta_schedule,
+                    )
+#        elif self.conf.scheduler_method == "KDPM2AncestralDiscreteScheduler":
+#            if str(type(self.pipe.scheduler)).find("KDPM2AncestralDiscreteScheduler") < 0:
+#                from diffusers import KDPM2AncestralDiscreteScheduler
+#                self.pipe.scheduler = KDPM2AncestralDiscreteScheduler(
+#                        beta_start=self.pipe.scheduler.beta_start,
+#                        beta_end=self.pipe.scheduler.beta_end,
+#                        beta_schedule=self.pipe.scheduler.beta_schedule,
+#                    )
 
         view_pixbuf = None
         fname = ""
@@ -525,7 +573,8 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                                      tensorsa[8], tensorsb[9], tensorsa[10], tensorsb[11], tensorsa[12], tensorsb[13], tensorsa[14], tensorsb[15]), axis=-1)
 #                print("done -1")
 
-                img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=10, width=512, height=512, latents=latents, output_type="raw").images # [0]
+                img_tensor = self.pipe(prompt, negative_prompt=neg_prompt, num_inference_steps=self.conf.scheduler_steps,
+                                       width=512, height=512, latents=latents, output_type="raw").images # [0]
 #                print("done1")
                 img_arr = img_tensor.cpu().float().numpy()
                 if self.conf.nsfw_filter == True:
@@ -594,7 +643,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 #            print("done16")
 # make preview
             if not self.preview_generate: # re-generate from history
-                self.status_update('<big><b>Processing: Done.</b></big>')
+                self.status_update('<big><b>Processing: Done.(%s)</b></big>'%(ps))
                 self.processing = False
                 return
 #            print("done17")
@@ -610,7 +659,7 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
 #            print("done20")
 
 #        print("done21")
-        self.status_update('<big><b>Processing: Done.</b></big>')
+        self.status_update('<big><b>Processing: Done.(%s)</b></big>'%(ps))
 #        print("done22")
         self.processing = False
 #        print("done23")
@@ -1021,6 +1070,38 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                     mmi_menu.show()
                 menu.append(mm_menu)
                 mm_menu.show()
+                menu_count += 1
+
+            if not self._parent.processing:
+                smethod_menu = Gtk.MenuItem.new_with_label("Scheduler Method")
+                smethod_menu_child = Gtk.Menu()
+                smethod_menu.set_submenu(smethod_menu_child)
+                for method in ["KDPM2DiscreteScheduler", "DPMSolverMultistepScheduler", "DPMSolverSinglestepScheduler"]:
+                    smmenu = Gtk.CheckMenuItem.new_with_label(method)
+                    smmenu.set_active(True if self._parent.conf.scheduler_method == method else False)
+                    smmenu._method = method
+                    smmenu._parent = self._parent
+                    smmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_method", self._method))
+                    smethod_menu_child.append(smmenu)
+                    smmenu.show()
+                menu.append(smethod_menu)
+                smethod_menu.show()
+                menu_count += 1
+
+            if not self._parent.processing: # hmm...is this needed?
+                step_menu = Gtk.MenuItem.new_with_label("Scheduler Step")
+                step_menu_child = Gtk.Menu()
+                step_menu.set_submenu(step_menu_child)
+                for step_count in [10, 12, 15, 20, 30, 50]:
+                    scmenu = Gtk.CheckMenuItem.new_with_label("%s"%(step_count))
+                    scmenu.set_active(True if self._parent.conf.scheduler_steps == step_count else False)
+                    scmenu._count = step_count
+                    scmenu._parent = self._parent
+                    scmenu.connect("activate", lambda self: self._parent.conf.__setattr__("scheduler_steps", self._count))
+                    step_menu_child.append(scmenu)
+                    scmenu.show()
+                menu.append(step_menu)
+                step_menu.show()
                 menu_count += 1
 
             if not self._parent.processing:
