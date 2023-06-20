@@ -60,12 +60,17 @@ def code_gen(parent_obj, parent_obj_name, mapping, code_addition = ""):
         c = parent_obj
         code += "    " + parent_obj_name
         codeline_addition = code_addition
+        top = True
         while len(path):
             p = path.pop(0)
-            if hasattr(c, "__iter__"):
-                code += f"""[{p}]"""
-                c = c[int(p)]
-                continue
+            try:
+                if not top and hasattr(c, "__iter__"):
+                    code += f"""[{p}]"""
+                    c = c[int(p)]
+                    continue
+            except:
+                pass
+            top = False
             if p in c._modules:
                 code += f"""._modules["{p}"]"""
                 c = c._modules[p]
