@@ -704,17 +704,30 @@ last_neg_prompt = """ + '"""' + self.last_neg_prompt + '"""'+ """
                 model = DeepDanbooruModel()
                 model.load_state_dict(torch.load(deep_danbooru_path))
 
-                deep_danbooru_ts_path = config_dir + "deep_danbooru.pt"
-                if not os.path.exists(deep_danbooru_ts_path):
+                deep_danbooru_gm_path = config_dir + "deep_danbooru_gm.pt"
+
+                if not os.path.exists(deep_danbooru_gm_path):
                     model.eval()
                     model.half().cuda()
-                    traced_fn = torch.jit.trace(model, example_inputs=[img_tensor])
-                    torch.jit.save(traced_fn, deep_danbooru_ts_path)
+                    def graph_save(gm: torch.fx.GraphModule, args):
+                        torch.save(gm, deep_danbooru_gm_path)
+#                        print(args) # [FakeTensor(FakeTensor(..., device='meta', size=(1, 512, 512, 3), dtype=torch.float16), cuda:0)]
+                        return gm
+                    gs = torch.compile(model, backend=graph_save, mode="reduce-overhead", fullgraph=True)
+                    gs(img_tensor)
 
-                self.traced_fn = torch.jit.load(deep_danbooru_ts_path)
+                gm = torch.load(deep_danbooru_gm_path)
+                from torch._inductor.compile_fx import compile_fx
+                from torch._subclasses.fake_tensor import FakeTensorMode
+                fm = FakeTensorMode()
+                ft = fm.from_tensor(img_tensor)
+#                print(ft) # FakeTensor(FakeTensor(..., device='meta', size=(1, 512, 512, 3), dtype=torch.float16), cuda:0)
+                self.traced_fn = compile_fx(gm, [ft])
+
 
 #            print("done9")
             y = self.traced_fn(img_tensor)
+            y = y[0] # XXX: for compile_fx only but why?
 #            print("done10")
 
 #            time_mid = time.perf_counter()
